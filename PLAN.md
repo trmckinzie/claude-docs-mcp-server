@@ -96,12 +96,34 @@ token, and where it guesses wrong it guesses consistently. After folding, zero
 splits remain, and `df` for `stdio`/`mcp`/`server` is still 1/2/3 — so the
 ground truth 2.4 asserts against is unchanged.
 
-### 2.3 — Index
-`buildIndex(docs[]) -> Index` — inverted index (term → postings) plus per-chunk
-length, average length, document frequency.
+### 2.3 — Index  ✅ done
+`buildIndex(docs) -> Index` in `src/build-index.ts`, plus
+`documentFrequency(index, term)`. 12 tests in `tests/build-index.test.ts`.
 
-Tests: term in 2 of 3 chunks has df=2 · avgdl math · rebuild is deterministic ·
-empty corpus doesn't throw.
+- **The retrievable unit is the chunk, not the document.** `df` counts chunks
+  carrying a term. Doc-level `df` (what `fixtures.test.ts` pins) is a different,
+  coarser number — `stdio` is df=1 by document and df=2 by chunk.
+- Postings keep `bodyTf` and `headingTf` apart, so 2.4 can weight heading hits
+  without a second pass.
+- The whole `headingPath` is indexed into each chunk, so `### Framing` under
+  `## stdio` still answers a query about stdio.
+- `length` = body + heading tokens. `avgdl` is their mean; 0 for an empty
+  corpus rather than `NaN`.
+- Terms sorted by code point (not `localeCompare`, which varies with host ICU
+  data), postings sorted by chunk, so two builds match byte for byte.
+- Document title is denormalised onto each chunk so a hit renders without a
+  lookup back to the document.
+
+**Real corpus:** 10 chunks, avgdl 17.6 tokens, 126-term vocabulary.
+
+**Carried into 2.4:** the `stdio` chunk is 42 tokens against an avgdl of 17.6,
+because the fenced `bash` block is indexed along with the prose. It is the most
+relevant chunk for a stdio query *and* the longest, so BM25's `b` will penalise
+exactly the chunk that should win. Decide at 2.4 whether to lower `b`, exclude
+fence contents from `length`, or leave it.
+
+**Not indexed yet:** frontmatter `tags` and the document `title` are parsed but
+never tokenised into the index. Revisit at 2.5 if recall is poor.
 
 ### 2.4 — BM25 ranker
 `rank(index, queryTokens, opts) -> ScoredChunk[]`
