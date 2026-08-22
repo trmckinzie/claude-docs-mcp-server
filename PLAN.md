@@ -71,15 +71,30 @@ Pure: no fs, no server. 18 tests in `tests/parse-doc.test.ts`.
 structure is H1s collapses into one chunk. H4+ stays inline, because chunks
 small enough to distort `avgdl` would skew every BM25 score in 2.4.
 
-### 2.2 — Tokenizer
-`tokenize(text) -> string[]`
+### 2.2 — Tokenizer  ✅ done
+`tokenize(text) -> string[]` in `src/tokenize.ts`. 15 tests in
+`tests/tokenize.test.ts`. Also exports `STOPWORDS`.
 
-Lowercase; split on non-alphanumerics but keep intra-word `-` `.` `+` `#` so
-`claude-code`, `4.5`, `c++` survive. Strip a small stopword list. Plural folding
-only if tests show it helps.
+- Lowercases. A token opens on a letter or digit and continues through the
+  joiners `-` `.` `+` `#`, so `claude-code`, `4.5`, `c++`, `c#` and `mcp.json`
+  survive whole, while leading punctuation is stripped (`--help` → `help`).
+- `\p{L}` not `a-z`, so accented and non-Latin scripts are kept rather than
+  silently deleted.
+- `_` is a separator, so `max_tokens` is reachable as `max` + `token`.
+- Lone ASCII letters are dropped (the `s` left behind by `server's`).
+- Stopwords are checked before folding, so `does` is dropped rather than
+  surviving as `doe`, and again after.
 
-Tests: `"MCP stdio transport"` · `claude-code` stays one token · punctuation-only
-input · unicode · empty string.
+**Plural folding: implemented, on evidence.** 2.2 originally deferred it until
+tests showed it helped. Scanning the corpus found nine singular/plural pairs
+across three documents (`servers`/`server`, `messages`/`message`,
+`requests`/`request`, …), so `"how do I configure MCP servers?"` missed the
+document that says `server` throughout. Trailing `s` folds when the token is
+4+ characters and does not end `ss`/`us`/`is`; `-ies` folds to `-y`. Cruder
+than a stemmer on purpose: it only has to map query and document to the *same*
+token, and where it guesses wrong it guesses consistently. After folding, zero
+splits remain, and `df` for `stdio`/`mcp`/`server` is still 1/2/3 — so the
+ground truth 2.4 asserts against is unchanged.
 
 ### 2.3 — Index
 `buildIndex(docs[]) -> Index` — inverted index (term → postings) plus per-chunk
