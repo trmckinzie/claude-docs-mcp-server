@@ -46,18 +46,30 @@ document frequencies 2.3 and 2.4 will assert against (`stdio`=1, `mcp`=2,
 
 `tests/smoke.test.ts` deleted; it has served its purpose.
 
-### 2.1 — Parser: frontmatter + chunking
-`parseDoc(raw, path) -> { meta, chunks[] }`
+### 2.1 — Parser: frontmatter + chunking  ✅ done
+`parseDoc(raw, path) -> { path, title, meta, chunks[] }` in `src/parse-doc.ts`.
+Pure: no fs, no server. 18 tests in `tests/parse-doc.test.ts`.
 
-- Split `---` frontmatter with a hand-rolled minimal `key: value` parser (~30
-  lines, our schema, no dep). Escalate to `gray-matter` only if the schema
-  outgrows it. Reversible decision.
-- Chunk the body **by heading**: each `##`/`###` starts a chunk carrying its
-  heading path (`Transports > stdio`) and a stable anchor id.
-- Content above the first heading becomes a lead chunk.
+**Behaviours pinned by test:**
 
-Tests: no frontmatter · malformed frontmatter · empty file · no headings ·
-nested headings · a `#` inside a code fence must not split a chunk.
+- Frontmatter is a hand-rolled `key: value` parser. `tags` splits on commas
+  into a list; a line with no colon is skipped rather than thrown on.
+- **Unterminated frontmatter is treated as body**, not metadata. Swallowing the
+  remainder would lose the whole document; indexing it as text keeps it findable.
+- Chunks split on headings up to `SPLIT_MAX_LEVEL`. Heading-shaped lines inside
+  a fenced block (backtick or tilde) do not split.
+- `headingPath` is a stack, so `### Framing` under `## stdio` carries
+  `["stdio", "Framing"]`.
+- Lead chunks (prose before the first heading) are kept, except when empty.
+  Empty *headed* chunks are kept — the heading text is still worth matching.
+- Anchors are slugs, disambiguated on collision (`setup`, `setup-2`, `setup-3`).
+- Title resolution: frontmatter `title` → first H1 → file stem.
+- `startLine` is the 1-based line in the original file, so `get_doc` can cite it.
+
+**Deviation:** PLAN originally said split on `##`/`###`. Implemented as
+`SPLIT_MAX_LEVEL = 3`, which also splits on `#` — otherwise a doc whose only
+structure is H1s collapses into one chunk. H4+ stays inline, because chunks
+small enough to distort `avgdl` would skew every BM25 score in 2.4.
 
 ### 2.2 — Tokenizer
 `tokenize(text) -> string[]`
