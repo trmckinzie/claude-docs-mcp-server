@@ -68,12 +68,29 @@ function foldPlural(token: string): string {
   return token;
 }
 
-export function tokenize(text: string): string[] {
-  const tokens: string[] = [];
+export interface TokenPosition {
+  /** The token as indexed: lowercased and plural-folded. */
+  token: string;
+  /** Offset of the matched word in the *original* text. */
+  start: number;
+  /** End offset, exclusive. `text.slice(start, end)` is the original word. */
+  end: number;
+}
 
-  for (const match of text.toLowerCase().matchAll(TOKEN_RE)) {
-    const token = match[0].replace(TRAILING_PUNCTUATION_RE, "");
-    if (token === "") continue;
+/**
+ * Tokenises while recording where each token came from, so a snippet can be
+ * centred on a match. Matching runs against the original text rather than a
+ * lowercased copy: for a handful of characters, lowercasing changes string
+ * length, which would drift the offsets.
+ */
+export function tokenizePositions(text: string): TokenPosition[] {
+  const positions: TokenPosition[] = [];
+
+  for (const match of text.matchAll(TOKEN_RE)) {
+    const original = match[0].replace(TRAILING_PUNCTUATION_RE, "");
+    if (original === "") continue;
+
+    const token = original.toLowerCase();
     if (LONE_ASCII_LETTER_RE.test(token)) continue;
     // Checked before folding so `does` is dropped rather than kept as `doe`,
     // and again after, in case folding lands on a function word.
@@ -81,8 +98,15 @@ export function tokenize(text: string): string[] {
 
     const folded = foldPlural(token);
     if (STOPWORDS.has(folded)) continue;
-    tokens.push(folded);
+
+    const start = match.index ?? 0;
+    positions.push({ token: folded, start, end: start + original.length });
   }
 
-  return tokens;
+  return positions;
+}
+
+/** Defined in terms of `tokenizePositions` so the two can never disagree. */
+export function tokenize(text: string): string[] {
+  return tokenizePositions(text).map((position) => position.token);
 }

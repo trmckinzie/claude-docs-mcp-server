@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STOPWORDS, tokenize } from "../src/tokenize.js";
+import { STOPWORDS, tokenize, tokenizePositions } from "../src/tokenize.js";
 
 describe("tokenize", () => {
   it("lowercases and splits on whitespace", () => {
@@ -102,5 +102,27 @@ describe("plural folding", () => {
   it("does not resurrect a stopword by folding it", () => {
     // "does" must not survive as "doe".
     expect(tokenize("does the server start")).toEqual(["server", "start"]);
+  });
+});
+
+/** Snippet building needs to know where a match sits in the source text. */
+describe("tokenizePositions", () => {
+  it("reports where each token sits in the original text", () => {
+    expect(tokenizePositions("The MCP server")).toEqual([
+      { token: "mcp", start: 4, end: 7 },
+      { token: "server", start: 8, end: 14 },
+    ]);
+  });
+
+  it("spans the original word, not the folded token", () => {
+    const text = "Restart the servers.";
+    const hit = tokenizePositions(text)[1];
+    expect(hit?.token).toBe("server");
+    expect(text.slice(hit?.start ?? 0, hit?.end ?? 0)).toBe("servers");
+  });
+
+  it("agrees with tokenize, so highlighting cannot drift from matching", () => {
+    const text = "MCP stdio transport, claude-code, 4.5 and c++ servers.";
+    expect(tokenizePositions(text).map((p) => p.token)).toEqual(tokenize(text));
   });
 });

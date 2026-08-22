@@ -164,14 +164,34 @@ by rewording the fixture — that would hide the limitation rather than record i
 This is the concrete case to weigh at 2.7 and against the Phase 3 `Ranker`
 swap.
 
-### 2.5 — `search()` facade
-`search(query, { limit = 5, maxChars })` → `{ path, anchor, headingPath, score, snippet }[]`
+### 2.5 — `search()` facade  ✅ done
+`search(index, query, opts?) -> SearchHit[]` in `src/search.ts`, plus
+`SEARCH_DEFAULTS` (`limit: 5`, `maxChars: 320`). 12 tests in
+`tests/search.test.ts`.
 
-Snippet = matched window with query terms centered, hard-capped so a response
-can't blow up context. **That cap is the entire point of this server** — assert it.
+- Takes a raw query string and tokenises internally; `rank` still takes tokens.
+- A hit carries `path`, `anchor`, `title`, `headingPath`, `startLine`, `score`
+  and `snippet` — enough to render and cite without a second lookup.
+- Snippet text is whitespace-flattened *first*, so offsets and the character
+  budget agree with what is actually returned.
+- The window is the one covering the most query terms, with a quarter-width
+  lead so the first match is not flush against the edge. Ellipses come out of
+  the budget, never on top of it.
+- A chunk can rank on its heading alone, leaving no query term in the body.
+  That falls back to the opening of the body rather than returning nothing.
 
-Tests: respects `limit` · snippet never exceeds `maxChars` · snippet contains at
-least one query term · stable ordering.
+**Tokenizer change:** `tokenizePositions` added and `tokenize` redefined in
+terms of it. Snippet centring needs offsets, and deriving both from one code
+path means highlighting can never drift from matching.
+
+**Bug found and fixed while building.** A window anchored at the far end of a
+chunk was clamped to `textLength - maxChars`, then charged for its leading
+ellipsis afterwards — leaving it one character short of the end, at which point
+the word-boundary snap dropped the very term the window was centred on. The
+clamp now reserves the ellipsis up front.
+
+**Cap verified by fuzzing, not just by example:** 3400 snippets across five
+queries at every width from 1 to 200 characters. Worst overshoot 0.
 
 ### 2.6 — MCP server wiring
 First step that touches I/O. `src/index.ts`: stdio transport, tool registration.
