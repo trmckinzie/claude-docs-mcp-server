@@ -8,7 +8,7 @@ of carrying a doc dump in context.
 
 ---
 
-## Phase 1 — Scaffold  ← current
+## Phase 1 — Scaffold  ✅ done
 
 - [x] `package.json` (ESM; scripts: `test`, `test:watch`, `typecheck`, `build`, `dev`)
 - [x] `tsconfig.json` (NodeNext, strict) + `tsconfig.build.json`
@@ -21,18 +21,30 @@ of carrying a doc dump in context.
 
 ---
 
-## Phase 2 — `search_docs`
+## Phase 2 — `search_docs`  ← current
 
 Each step is one TDD cycle: write the listed tests, watch them fail, implement,
 go green, commit. Every module in 2.1–2.5 is a **pure function** — no fs, no server.
 
-### 2.0 — Test fixtures
-Build `tests/fixtures/docs/`: 4–5 small Markdown files with realistic frontmatter
-and headings (MCP transports, Claude Code settings, Messages API, one file with
-no frontmatter, one empty). These are ground truth for every ranking assertion
-downstream — get them right before writing a line of index code.
+### 2.0 — Test fixtures  ✅ done
+Fixtures live in two sets, not one, and the split is load-bearing:
 
-Delete `tests/smoke.test.ts` at this step; it has served its purpose.
+- `tests/fixtures/corpus/` — three realistic docs (`mcp/transports.md`,
+  `claude-code/settings.md`, `api/messages.md`). This is the ground truth for
+  every index and ranking assertion.
+- `tests/fixtures/edge-cases/` — five parser-only files: empty, no frontmatter,
+  malformed frontmatter, unterminated frontmatter, no headings.
+
+**Why separate:** an empty or malformed file in the ranking corpus would change
+`avgdl`, and BM25 normalises every score by `avgdl`. Mixing them would make the
+hand-computed scores in 2.4 shift for reasons unrelated to the ranker.
+
+`tests/fixtures/load.ts` reads a set and returns `{ path, raw }[]` sorted by
+path. `tests/fixtures.test.ts` guards the fixtures themselves — it pins the
+document frequencies 2.3 and 2.4 will assert against (`stdio`=1, `mcp`=2,
+`server`=3) so a careless fixture edit fails here rather than in the ranker.
+
+`tests/smoke.test.ts` deleted; it has served its purpose.
 
 ### 2.1 — Parser: frontmatter + chunking
 `parseDoc(raw, path) -> { meta, chunks[] }`
