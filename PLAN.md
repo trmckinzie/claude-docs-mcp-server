@@ -185,10 +185,29 @@ Tests: tool schemas validate · handler returns MCP-shaped content · unknown
 `path` in `get_doc` returns an error result rather than throwing · **nothing
 reaches stdout except protocol frames**.
 
+### 2.6.5 — Fetch the corpus
+New step, added once `docs/` was settled as a cache (see Decisions below).
+
+- `docs.manifest.json` — committed. One entry per document: source URL, local
+  path, content hash, fetched-at date.
+- A fetch script that pulls each entry, writes it under `docs/`, updates the
+  manifest, and **reports what changed** — added, updated, unchanged, gone.
+- Re-runnable and idempotent. Running it twice in a row changes nothing.
+
+**Unverified, and worth checking before designing this:** how Anthropic
+publishes machine-readable docs. Whether there is an `llms.txt` / `llms-full.txt`
+index, per-page Markdown, or only HTML decides whether this is ~40 lines or a
+genuinely fiddly component. Do not guess — go and look.
+
 ### 2.7 — Run it for real
 - `npm run dev` smoke test against a hand-typed query
 - Register in `.mcp.json`, restart Claude Code, confirm the tool appears
-- Drop 3–4 real docs into `docs/` and eyeball the top hits
+- Fetch the real corpus with 2.6.5 and eyeball the top hits
+- **Re-check `ancestorBoost`.** 1.0 is the highest value that ranks the 2.4
+  fixture correctly. Real documents have deeper heading trees, so confirm it
+  still holds rather than assuming.
+- **Re-check the lexical recall gap** from 2.4 ("stdout" vs "standard output")
+  against real prose, where the vocabulary mismatch may be better or far worse.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
@@ -200,11 +219,43 @@ reaches stdout except protocol frames**.
 - Reindex on file change (`fs.watch`) rather than on boot
 - Cache index to disk; skip reparse when mtimes are unchanged
 - `list_docs` tool for corpus discovery
-- Extract a `Ranker` interface if lexical recall proves too brittle
-- Freshness warning when a doc's `updated:` frontmatter goes stale
+- Extract a `Ranker` interface if lexical recall proves too brittle — 2.4 found
+  a concrete case where it does
+- **A digest of what changed on the last sync.** `search_docs` is pull-based: it
+  only helps when I think to query it. "Keep me current" implies something
+  push-shaped too. Different feature, same goal.
+
+---
+
+## Decisions
+
+### `docs/` is a cache, not a work product  — settled
+The corpus is a true mirror of Anthropic's published documentation, kept
+current. It is therefore **gitignored**, with `docs/.gitkeep` retained so the
+directory survives a clone. Committed instead: `docs.manifest.json` and the
+fetch script, so anyone can rebuild the exact corpus.
+
+**Why not commit it:** committing a regenerable mirror is the `node_modules`
+mistake. It also buries staleness — the whole premise of this project is that
+stale instructions are the problem, and a committed snapshot moves the staleness
+from the context window into git, where it is *less* visible rather than more.
+
+**Consequence — `docs/` is read-only by convention.** A refresh overwrites it,
+so hand-edits get destroyed silently. Anything written by hand belongs in
+`CLAUDE.md`, or a committed `notes/` directory if it grows.
+
+**Consequence — freshness is a feature, not backlog.** The manifest carries a
+hash and a fetched-at date per file so "what changed since last sync" is
+answerable, and a result can say how old its source is.
+
+### Test fixtures stay separate from `docs/`  — settled at 2.0
+`tests/fixtures/` is committed and pinned; no test reads `docs/`. This decision
+is what makes the corpus disposable — test reproducibility does not depend on it.
 
 ## Open questions
 
-1. Does `docs/` get committed, or stay gitignored as a local corpus?
-2. Where do the docs come from — manual curation, or a fetch script?
-3. Do we want `source_url` in frontmatter so you can cite where a snippet came from?
+1. Should frontmatter `tags` and document titles be indexed? Both are parsed
+   today, neither is tokenised into the index, so a document whose title is the
+   only place a term appears cannot be found by it.
+2. Does a hand-written `notes/` directory get created now, or wait until there
+   is something to put in it?

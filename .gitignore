@@ -4,3 +4,8 @@ dist/
 .env
 .env.*
 .DS_Store
+
+# The docs corpus is a regenerable mirror, rebuilt by the fetch script from
+# docs.manifest.json. See "Decisions" in PLAN.md.
+docs/*
+!docs/.gitkeep
