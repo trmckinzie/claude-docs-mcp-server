@@ -14,8 +14,14 @@ export interface Posting {
   chunk: number;
   /** Occurrences in the chunk body. */
   bodyTf: number;
-  /** Occurrences anywhere in the chunk's heading path. */
+  /** Occurrences in the chunk's own heading. */
   headingTf: number;
+  /**
+   * Occurrences in an ancestor heading only. Kept apart from `headingTf`
+   * because a subsection inherits its parent's topic far more weakly than the
+   * section actually titled that -- see the boosts in `rank.ts`.
+   */
+  ancestorTf: number;
 }
 
 export interface IndexedChunk extends Chunk {
@@ -41,7 +47,7 @@ export function documentFrequency(index: Index, term: string): number {
   return index.postings.get(term)?.length ?? 0;
 }
 
-type Field = "bodyTf" | "headingTf";
+type Field = "bodyTf" | "headingTf" | "ancestorTf";
 
 export function buildIndex(docs: ParsedDoc[]): Index {
   const chunks: IndexedChunk[] = [];
@@ -50,19 +56,23 @@ export function buildIndex(docs: ParsedDoc[]): Index {
   for (const doc of docs) {
     for (const chunk of doc.chunks) {
       const bodyTokens = tokenize(chunk.text);
-      // The whole heading path, so a subsection inherits its parents' terms:
-      // "### Framing" under "## stdio" is still about stdio.
-      const headingTokens = chunk.headingPath.flatMap((heading) => tokenize(heading));
+      const headingTokens = chunk.heading === null ? [] : tokenize(chunk.heading);
+      // Ancestors still count, so "### Framing" under "## stdio" remains
+      // findable by "stdio" -- just not as strongly as the stdio section itself.
+      const ancestorTokens = chunk.headingPath
+        .slice(0, -1)
+        .flatMap((heading) => tokenize(heading));
 
       const position = chunks.length;
       chunks.push({
         ...chunk,
         title: doc.title,
-        length: bodyTokens.length + headingTokens.length,
+        length: bodyTokens.length + headingTokens.length + ancestorTokens.length,
       });
 
       accumulate(accumulator, bodyTokens, position, "bodyTf");
       accumulate(accumulator, headingTokens, position, "headingTf");
+      accumulate(accumulator, ancestorTokens, position, "ancestorTf");
     }
   }
 
@@ -91,7 +101,7 @@ function accumulate(
 
     let posting = byChunk.get(position);
     if (posting === undefined) {
-      posting = { chunk: position, bodyTf: 0, headingTf: 0 };
+      posting = { chunk: position, bodyTf: 0, headingTf: 0, ancestorTf: 0 };
       byChunk.set(position, posting);
     }
 

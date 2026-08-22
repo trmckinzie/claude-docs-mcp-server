@@ -46,8 +46,8 @@ describe("buildIndex", () => {
       parseDoc("## Beta\n\nserver transport\n", "b.md"),
     ]);
     expect(index.postings.get("server")).toEqual([
-      { chunk: 0, bodyTf: 2, headingTf: 0 },
-      { chunk: 1, bodyTf: 1, headingTf: 0 },
+      { chunk: 0, bodyTf: 2, headingTf: 0, ancestorTf: 0 },
+      { chunk: 1, bodyTf: 1, headingTf: 0, ancestorTf: 0 },
     ]);
   });
 
@@ -56,22 +56,26 @@ describe("buildIndex", () => {
       parseDoc("## Server setup\n\nThe server starts.\n", "c.md"),
     ]);
     expect(index.postings.get("server")).toEqual([
-      { chunk: 0, bodyTf: 1, headingTf: 1 },
+      { chunk: 0, bodyTf: 1, headingTf: 1, ancestorTf: 0 },
     ]);
     expect(index.postings.get("setup")).toEqual([
-      { chunk: 0, bodyTf: 0, headingTf: 1 },
+      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0 },
     ]);
   });
 
-  it("indexes ancestor headings into the child chunk", () => {
+  it("separates a chunk's own heading from the ones it inherits", () => {
     const index = buildIndex([
       parseDoc("## stdio\n\nbody one\n\n### Framing\n\nbody two\n", "d.md"),
     ]);
-    // "stdio" heads chunk 0 and is an ancestor of chunk 1, so both carry it.
+    // Chunk 0 is titled "stdio". Chunk 1 is titled "Framing" and merely sits
+    // underneath it -- the word "stdio" appears nowhere in its own heading or
+    // body. Counting both as heading matches would let the subsection outrank
+    // the section actually about stdio, so they are tracked apart.
     expect(index.postings.get("stdio")).toEqual([
-      { chunk: 0, bodyTf: 0, headingTf: 1 },
-      { chunk: 1, bodyTf: 0, headingTf: 1 },
+      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0 },
+      { chunk: 1, bodyTf: 0, headingTf: 0, ancestorTf: 1 },
     ]);
+    // Still retrievable from the child: inheritance is weakened, not dropped.
     expect(documentFrequency(index, "stdio")).toBe(2);
   });
 

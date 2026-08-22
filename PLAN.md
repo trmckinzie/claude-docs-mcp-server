@@ -116,24 +116,53 @@ ground truth 2.4 asserts against is unchanged.
 
 **Real corpus:** 10 chunks, avgdl 17.6 tokens, 126-term vocabulary.
 
-**Carried into 2.4:** the `stdio` chunk is 42 tokens against an avgdl of 17.6,
-because the fenced `bash` block is indexed along with the prose. It is the most
-relevant chunk for a stdio query *and* the longest, so BM25's `b` will penalise
-exactly the chunk that should win. Decide at 2.4 whether to lower `b`, exclude
-fence contents from `length`, or leave it.
+**Resolved at 2.4:** the `stdio` chunk being 42 tokens against an avgdl of 17.6
+turned out *not* to be the ranking problem it looked like. See 2.4. `b` stays at
+0.75 and code fences stay indexed and counted.
+
+**Amended at 2.4:** `Posting` gained `ancestorTf`, and `headingTf` narrowed to
+mean the chunk's *own* heading. Ancestor headings are still indexed, just
+tracked separately so the ranker can weight them down.
 
 **Not indexed yet:** frontmatter `tags` and the document `title` are parsed but
 never tokenised into the index. Revisit at 2.5 if recall is poor.
 
-### 2.4 — BM25 ranker
-`rank(index, queryTokens, opts) -> ScoredChunk[]`
+### 2.4 — BM25 ranker  ✅ done
+`rank(index, queryTokens, opts?) -> ScoredChunk[]` in `src/rank.ts`, plus
+`inverseDocumentFrequency` and `BM25_DEFAULTS`. 15 tests in `tests/rank.test.ts`.
 
-Standard BM25 plus a **field boost**: heading-path matches weighted above body
-matches (start 2.0×, tune against fixtures). Ties broken by path for determinism.
+- `k1: 1.2`, `b: 0.75`, `headingBoost: 2`, `ancestorBoost: 1`.
+- Smoothed idf, `ln(1 + (N - df + 0.5) / (df + 0.5))`. The textbook form goes
+  negative once a term appears in more than half the corpus, letting a common
+  word *subtract* from a score; this decays toward zero instead.
+- Ties break on score, then path, then `startLine` — never insertion order.
+- Returns `matched` terms per hit, so 2.5 can centre snippets on them.
 
-Tests: known-corpus scores asserted to 2 decimals · exact ordering for 3 sample
-queries · a term present in every chunk contributes ~0 (idf floor) · unknown term
-returns `[]` · a long chunk doesn't beat a short focused one at equal term count.
+**The ranking bug this step found.** With one heading weight for own *and*
+inherited headings, the query `stdio` ranked `#framing` (2.13) above `#stdio`
+(1.80) — and `### Framing` contains the word nowhere in its own heading or body.
+It scored purely by inheritance.
+
+Sweeps separated the two candidate causes:
+
+| lever | result |
+| --- | --- |
+| `b` from 0.90 → 0.25 | ordering correct at *every* value — length was never the cause |
+| `ancestorBoost` 2 → 1.5 | still wrong |
+| `ancestorBoost` 1 → 0.5 | correct |
+
+So the fix was structural, not a tuning nudge: separate `ancestorTf` in the
+index and weight it at body level. Margin at the default is 1.795 vs 1.577.
+Note 1.0 is the *highest* safe value — worth re-checking against real docs
+at 2.7.
+
+**Known recall gap, no fix attempted.** The query "what happens if I log to
+stdout" returns nothing, even though the stdio section covers exactly that. The
+prose says "standard output" and "logging"; the query says "stdout" and "log".
+Pure lexical matching cannot bridge either gap. Deliberately *not* worked around
+by rewording the fixture — that would hide the limitation rather than record it.
+This is the concrete case to weigh at 2.7 and against the Phase 3 `Ranker`
+swap.
 
 ### 2.5 — `search()` facade
 `search(query, { limit = 5, maxChars })` → `{ path, anchor, headingPath, score, snippet }[]`
