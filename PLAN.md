@@ -193,17 +193,53 @@ clamp now reserves the ellipsis up front.
 **Cap verified by fuzzing, not just by example:** 3400 snippets across five
 queries at every width from 1 to 200 characters. Worst overshoot 0.
 
-### 2.6 — MCP server wiring
-First step that touches I/O. `src/index.ts`: stdio transport, tool registration.
+### 2.6 — MCP server wiring  ✅ done
+Split into two modules, per the pure-core / I-O-at-the-edges convention:
 
-- `search_docs(query, limit?)` → ranked hits with snippets
-- `get_doc(path, anchor?)` → one full chunk, for when a snippet isn't enough
+- `src/load-docs.ts` — `loadDocs(rootDir) -> ParsedDoc[]`. The one impure step
+  in the pipeline. A missing directory returns `[]` rather than throwing,
+  since `docs/` is gitignored (see Decisions) and only populated by the 2.6.5
+  fetch step — a fresh clone has to start regardless.
+- `src/server.ts` — `createServer(index) -> McpServer`, registering
+  `search_docs(query, limit?)` and `get_doc(path, anchor?)`. Takes an
+  already-built `Index`, so it needs no transport or filesystem to test.
+- `src/index.ts` — the entry point. Loads `docs/`, builds the index, wires
+  `createServer` to `StdioServerTransport`. No unit tests of its own by
+  design; it's the I/O edge everything else was built to keep clean of.
 
-Loader walks `docs/`, reads files, feeds the 2.1–2.5 pipeline.
+26 tests across `tests/load-docs.test.ts` and `tests/server.test.ts`.
 
-Tests: tool schemas validate · handler returns MCP-shaped content · unknown
-`path` in `get_doc` returns an error result rather than throwing · **nothing
-reaches stdout except protocol frames**.
+**Tested against the real protocol, not handlers in isolation.** Rather than
+calling the registered tool callbacks directly, tests wire a real `Client` to
+the real `McpServer` over `InMemoryTransport`, so schema validation, request
+routing, and result-shaping all run for real.
+
+**"Nothing reaches stdout except protocol frames" is tested literally, not by
+convention.** A real `StdioServerTransport` is wired to a `PassThrough`
+standing in for stdout; every line written is asserted to be valid JSON. A
+stray `console.log` anywhere in the handler path would show up here as a line
+`JSON.parse` rejects.
+
+**One test expectation was wrong, not the code.** I assumed a malformed
+argument (`limit: "not-a-number"`) would reject the client's request — the
+behaviour of other MCP SDKs I'd seen before. Reading this SDK's source
+(`server/mcp.js`) showed it deliberately catches the validation `McpError` and
+returns a normal `CallToolResult` with `isError: true` instead. Fixed the test
+to assert the actual contract, and to assert what still matters: the
+malformed value never reaches `search()`.
+
+**Verified against a real subprocess, not just in-process tests.** Spawned
+`src/index.ts` as an actual child process via `StdioClientTransport`, listed
+tools and called one over real OS pipes, against the actual (currently empty)
+`docs/` directory. Confirms the empty-corpus path doesn't crash and
+diagnostics land on stderr, not just that the pieces typecheck together.
+
+**Caught for 2.7, not yet a problem:** `npm run dev` prints npm's own banner
+(`> claude-mcp-server@0.1.0 dev`) to stdout *before* the server starts. Fine
+for a human running it by hand; fatal if `.mcp.json` ever registers the
+command as `npm run dev` instead of a raw `tsx src/index.ts` / `node
+dist/index.js` — that banner would corrupt the first bytes of the protocol
+stream. Register the raw command at 2.7, not the npm script.
 
 ### 2.6.5 — Fetch the corpus
 New step, added once `docs/` was settled as a cache (see Decisions below).
