@@ -331,16 +331,88 @@ questions 2.7 was going to check got a preliminary answer:
   matching's ceiling is fine in general — 2.7 should still probe other
   paraphrase gaps before calling the question closed.
 
-### 2.7 — Run it for real
-- `npm run dev` smoke test against a hand-typed query
-- Register in `.mcp.json`, restart Claude Code, confirm the tool appears
-- ~~Fetch the real corpus with 2.6.5 and eyeball the top hits~~ — done at
-  2.6.5; six queries hand-checked against the real 283-document corpus
-- **Re-check `ancestorBoost` exhaustively.** 2.6.5 spot-checked a few queries
-  and found no problem; 2.7 should sweep more broadly before trusting it.
-- **Probe the lexical recall gap further.** The specific 2.4 case didn't
-  reproduce on real prose (see 2.6.5), but that's one query — try paraphrases
-  the real corpus is more likely to actually suffer from.
+### 2.7 — Run it for real  ✅ done (except the restart, see below)
+
+**`.mcp.json` registered** at the project root, project scope, committed:
+
+```json
+{
+  "mcpServers": {
+    "claude-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--import", "tsx", "${CLAUDE_PROJECT_DIR:-.}/src/index.ts"]
+    }
+  }
+}
+```
+
+Schema confirmed against the real `docs/claude-code/mcp.md` fetched at 2.6.5
+— including the `${CLAUDE_PROJECT_DIR:-.}` default, which the doc calls out
+by name as required for project-scoped entries. Uses the raw `node --import
+tsx` invocation, not `npm run dev` — the banner problem flagged at 2.6 is a
+real hazard for exactly this file.
+
+**Smoke test:** ran the literal `.mcp.json` command as a subprocess (not
+`npm run dev`, for the same banner reason) and called `search_docs` with a
+hand-typed-style query, "how do I use skills in Claude Code." Real, correctly
+ranked results; stderr carried only the one-line index summary. One
+observation from the result, not a bug: a few lower-ranked hits were "Next
+steps" nav sections (MDX `<Card>` link lists), which score well because they
+pack matched terms densely into a short chunk — legitimate BM25 behaviour,
+but a real content-quality artifact of indexing raw MDX boilerplate.
+Candidate Phase 3 item, not fixed here.
+
+**`ancestorBoost` swept exhaustively, not spot-checked.** Every non-lead
+heading in the real corpus (3995 of them) used as its own query, across eight
+candidate values:
+
+| `ancestorBoost` | violations / 3995 |
+| --- | --- |
+| 0.25 – 0.75 | 0 |
+| **1.00 (shipped)** | **1** |
+| 1.25 | 1 |
+| 1.50 | 6 |
+| 1.75 | 14 |
+| 2.00 | 23 |
+
+Confirms the 2.4 finding at scale: the violation rate climbs clearly and
+monotonically above 1.0, so 1.0 is the right default, not a lucky fit to a
+3-document fixture. The one real violation at 1.0 was inspected rather than
+waved away: "Get started in the CLI" (own body: a numbered walkthrough that
+never says "CLI") loses to its child "Manage site permissions" (a short
+section that inherits "get"/"started"/"cli" purely from the parent heading).
+Milder than the 2.4 pattern — the "losing" chunk's own content is only
+weakly on-topic to begin with, not an exact-title match losing to something
+irrelevant — and at a 15% score margin. Left as-is.
+
+**Lexical recall gap probed with real paraphrases, not the one 2.4 case.**
+Seven natural, casually-worded queries a user might actually type, deliberately
+avoiding the docs' own vocabulary:
+
+| Query | Result |
+| --- | --- |
+| "run claude without asking for permission every time" | hit — top 3 all on point |
+| "undo a change claude made" | hit — top result is exactly right |
+| "have multiple claudes work on the same task" | reasonable — Cowork + Agent Teams surfaced |
+| "make claude remember things between sessions" | partial — related but not the best doc |
+| "give claude a shortcut command" | partial — one good hit, two tangential |
+| "how do I stop claude from editing files" | **miss** — keyboard shortcuts and cache docs, nothing about permissions |
+| "claude keeps forgetting what we talked about" | **miss** — informal phrasing shares no vocabulary with the docs; results are noise |
+
+**Conclusion:** the specific 2.4 case ("stdout") was a fixture artifact, as
+already found — but the general concern behind it is real. About 2 of 7
+casually-phrased real queries produced no useful hit, specifically when the
+phrasing is informal or emotional rather than naming a technical concept.
+This is the concrete evidence behind the Phase 3 `Ranker`-interface item —
+not urgent, but no longer hypothetical.
+
+**Not done — cannot be done from inside this session.** MCP servers load at
+Claude Code session start. Registering `.mcp.json` doesn't make `search_docs`
+available to *this* running session; it takes effect on the next restart or
+new session. So the literal exit criteria below is unverified until then —
+next session, ask a real question and check whether I reach for `search_docs`
+instead of memory.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
@@ -353,7 +425,15 @@ questions 2.7 was going to check got a preliminary answer:
 - Cache index to disk; skip reparse when mtimes are unchanged
 - `list_docs` tool for corpus discovery
 - Extract a `Ranker` interface if lexical recall proves too brittle — 2.4 found
-  a concrete case where it does
+  a concrete case where it does, and 2.7 found it's not just that one case:
+  ~2 of 7 real casually-phrased queries against the real corpus missed
+  entirely, specifically informal/emotional phrasing that shares no
+  vocabulary with doc prose
+- Strip MDX component boilerplate (`<Card>`/`<Steps>` nav link lists, "Next
+  steps" sections) before indexing. 2.7 found these score artificially well
+  under BM25 — a short chunk densely packed with matched terms — despite
+  carrying little real content. Not urgent; found once, not systematically
+  measured.
 - **A digest of what changed on the last sync.** `search_docs` is pull-based: it
   only helps when I think to query it. "Keep me current" implies something
   push-shaped too. Different feature, same goal. Traced directly to the same

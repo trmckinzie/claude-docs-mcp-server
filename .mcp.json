@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "claude-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--import", "tsx", "${CLAUDE_PROJECT_DIR:-.}/src/index.ts"]
+    }
+  }
+}
