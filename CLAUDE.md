@@ -46,3 +46,7 @@ unnecessary, say so and why — don't silently drop it.
   keeps the ranker unit-testable without a live server.
 - Logs go to **stderr**. stdout is the MCP transport — a stray `console.log`
   silently corrupts the protocol stream.
+- Anything that fetches external content validates the host against an
+  explicit allowlist, requires HTTPS, and treats the response as inert text —
+  never executed, never eval'd. Applies to `scripts/fetch-docs.ts` and to
+  whatever fetches something next.

@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "fetch-docs": "tsx scripts/fetch-docs.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

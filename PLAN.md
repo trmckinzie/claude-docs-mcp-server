@@ -241,29 +241,106 @@ command as `npm run dev` instead of a raw `tsx src/index.ts` / `node
 dist/index.js` — that banner would corrupt the first bytes of the protocol
 stream. Register the raw command at 2.7, not the npm script.
 
-### 2.6.5 — Fetch the corpus
-New step, added once `docs/` was settled as a cache (see Decisions below).
+### 2.6.5 — Fetch the corpus  ✅ done
+Scope was reverse-engineered from an unstructured statement of the user's
+goals for this whole project (become a Claude Code power user; know the ins
+and outs of Claude; think and problem-solve better; stay on the cutting edge;
+security and engineering fundamentals required; scaffold the learning). Full
+reasoning trace lives in the approved plan at the time
+(`toasty-crunching-treasure.md`); the load-bearing conclusions:
 
-- `docs.manifest.json` — committed. One entry per document: source URL, local
-  path, content hash, fetched-at date.
-- A fetch script that pulls each entry, writes it under `docs/`, updates the
-  manifest, and **reports what changed** — added, updated, unchanged, gone.
-- Re-runnable and idempotent. Running it twice in a row changes nothing.
+**What gets fetched, and why:**
 
-**Unverified, and worth checking before designing this:** how Anthropic
-publishes machine-readable docs. Whether there is an `llms.txt` / `llms-full.txt`
-index, per-page Markdown, or only HTML decides whether this is ~40 lines or a
-genuinely fiddly component. Do not guess — go and look.
+| Source | Scope | Real count |
+| --- | --- | --- |
+| `code.claude.com/docs` | All of it — named priority #1 | 191 pages |
+| `platform.claude.com/docs` | Curated: thinking, context/caching, prompt engineering, tool use, agent skills, MCP connector/tunnels — **not** the ~550-page API/billing/admin reference | 58 pages |
+| `support.claude.com` (Help Center) | Cowork, Desktop, Chrome, Mobile collections only — not billing, SSO, Bedrock, Gov | 34 articles |
+
+**283 documents total**, indexing to 4980 chunks, avgdl 172.4 tokens.
+
+**Two assumptions from the plan turned out wrong, caught by verifying against
+real bytes rather than trusting the plan's own prediction:**
+
+- **Platform and Code docs do NOT share one `llms-full.txt` grammar**, despite
+  both being Mintlify sites. Code's is `# Title` immediately followed by
+  `Source: <url>`. Platform's is a fenced `---\ntitle:...\nurl:...\n---` block,
+  and critically the `## heading` before it is *not* a reliable title source —
+  the real file often has an unrelated in-body subheading (e.g. "## Next
+  steps" left over from the previous page) sitting closer to the block than
+  any actual page title. Two separate parsers:
+  `src/fetch/parse-llms-full.ts` and `src/fetch/parse-platform-llms-full.ts`.
+  Both verified against the real files (8MB and 40MB) before being trusted —
+  191/191 and 612/612 records recovered, zero suspect records, zero
+  duplicates, the one extreme outlier (a 573KB body) confirmed by eye to be
+  a legitimately huge page (`/changelog`) and not a swallowed neighbor.
+- **"Agent SDK" isn't part of the curated platform slice — it lives entirely
+  under `code.claude.com/docs/en/agent-sdk/`**, already covered by "fetch all
+  of Code." The plan's source table implied it belonged to the platform
+  curation step; it doesn't need one.
+
+**A near-miss the tests now guard against:** a first-pass keyword filter for
+the platform slice (matching "mcp", "skills", etc. anywhere in the URL) pulled
+in raw REST CRUD reference endpoints — `/api/skills/create`,
+`/api/admin/mcp_tunnels/reveal_token` — purely on keyword overlap, exactly the
+API-reference noise the scope decision was supposed to exclude.
+`src/fetch/platform-scope.ts` excludes `/docs/en/api/` unconditionally, tested
+against that specific failure case by name.
+
+**No collections API exists on the Help Center** (confirmed: the standard
+Zendesk endpoint 404s; the site is Next.js-rendered). Classification is by
+keyword in the article slug instead
+(`src/fetch/help-center-scope.ts`), built and tested against the real ~350
+article slugs pulled from the live homepage — including the enterprise/admin/
+deploy-flavored articles that sit inside otherwise-included collections
+(`deploy-claude-desktop-for-macos`, `claude-in-chrome-admin-controls`) and
+have to be excluded individually. Approximate by design, not exhaustive.
+
+**Module layout**, pure-core / IO-at-the-edges as at 2.6:
+`src/fetch/parse-llms-full.ts`, `parse-platform-llms-full.ts`,
+`platform-scope.ts`, `help-center-scope.ts`, `manifest.ts`, `url-safety.ts` —
+41 tests across `tests/fetch/*`, each verified against real production data in
+addition to its own test suite. `scripts/fetch-docs.ts` is the thin,
+untested-by-design I/O entry point (network + fs), same rationale as
+`src/index.ts` at 2.6.
+
+**Security**, per the plan and the new standing line in `CLAUDE.md`:
+hostname allowlist (`assertSafeFetchUrl`), HTTPS-only, a streamed
+200MB response cap with a 30s timeout, and a path-traversal guard
+(`isPathInsideDocs`) on every write under `docs/`.
+
+**Known simplification, not yet built:** the Help Center's `sitemap.xml`
+exposes a `lastmod` per article, which could skip re-fetching a page whose
+source hasn't changed. Not implemented — every run re-fetches every article
+and compares content hashes instead, which is correct but not maximally
+efficient. `ManifestEntry.sourceLastMod` exists as a field for this; nothing
+populates it yet.
+
+**Verified for real, not just typechecked:** ran the actual fetch script live
+twice — first run: 283 added, 0 unchanged; second run: 0 added, 283
+unchanged, confirming idempotency. Then pointed the existing, unmodified 2.1–
+2.5 pipeline at the real `docs/` output and hand-ran six queries. Both open
+questions 2.7 was going to check got a preliminary answer:
+
+- **`ancestorBoost: 1` holds up** on the real, much deeper heading trees
+  (spot-checked, not exhaustively swept — formal re-check still belongs at 2.7).
+- **The "stdout" vs "standard output" recall gap from 2.4 did not reproduce.**
+  Real docs about hooks and plugins use the literal words "stdout" and "log"
+  throughout, so the query returns strong, correctly-ranked hits. This says
+  the *specific* gap was a fixture-vocabulary artifact, not that lexical
+  matching's ceiling is fine in general — 2.7 should still probe other
+  paraphrase gaps before calling the question closed.
 
 ### 2.7 — Run it for real
 - `npm run dev` smoke test against a hand-typed query
 - Register in `.mcp.json`, restart Claude Code, confirm the tool appears
-- Fetch the real corpus with 2.6.5 and eyeball the top hits
-- **Re-check `ancestorBoost`.** 1.0 is the highest value that ranks the 2.4
-  fixture correctly. Real documents have deeper heading trees, so confirm it
-  still holds rather than assuming.
-- **Re-check the lexical recall gap** from 2.4 ("stdout" vs "standard output")
-  against real prose, where the vocabulary mismatch may be better or far worse.
+- ~~Fetch the real corpus with 2.6.5 and eyeball the top hits~~ — done at
+  2.6.5; six queries hand-checked against the real 283-document corpus
+- **Re-check `ancestorBoost` exhaustively.** 2.6.5 spot-checked a few queries
+  and found no problem; 2.7 should sweep more broadly before trusting it.
+- **Probe the lexical recall gap further.** The specific 2.4 case didn't
+  reproduce on real prose (see 2.6.5), but that's one query — try paraphrases
+  the real corpus is more likely to actually suffer from.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
@@ -279,7 +356,19 @@ genuinely fiddly component. Do not guess — go and look.
   a concrete case where it does
 - **A digest of what changed on the last sync.** `search_docs` is pull-based: it
   only helps when I think to query it. "Keep me current" implies something
-  push-shaped too. Different feature, same goal.
+  push-shaped too. Different feature, same goal. Traced directly to the same
+  brain dump as the corpus-scope decision below: "always be on the cutting
+  edge of Claude and its features."
+- **A topic-organized browse/`list_docs` tool, fundamentals vs. advanced.**
+  The concrete form "teach me... scaffold my knowledge of how Claude works"
+  takes beyond what 2.6.5 could cheaply do. 2.6.5 gave the corpus a
+  topic-organized directory layout for near-zero cost; an actual browsing/
+  learning-path tool is a real feature, deliberately not built at 2.6.5 to
+  avoid scope creep into a curriculum engine.
+- Populate `ManifestEntry.sourceLastMod` from the Help Center's
+  `sitemap.xml` and skip re-fetching an article whose `lastmod` hasn't moved.
+  Correctness doesn't depend on this (content-hash comparison already works);
+  it would only save unnecessary fetches.
 
 ---
 
@@ -307,6 +396,25 @@ answerable, and a result can say how old its source is.
 ### Test fixtures stay separate from `docs/`  — settled at 2.0
 `tests/fixtures/` is committed and pinned; no test reads `docs/`. This decision
 is what makes the corpus disposable — test reproducibility does not depend on it.
+
+### Corpus scope reverse-engineered from stated goals — settled at 2.6.5
+The user gave an unstructured statement of what this whole project is for,
+and asked for it to be translated into the fetcher's scope directly rather
+than handed back as a menu. The scope table and reasoning live at 2.6.5
+above. Recorded here so a future re-read of this file explains *why* Cowork
+is in and the API/billing reference is out, without re-deriving it from a
+chat transcript:
+
+- Claude Code named explicitly and first → fetch all of it, not a slice.
+- "Ins and outs of Claude... cutting edge of Claude and its features" → scope
+  is broader than Code alone; Cowork, Desktop, Chrome are in.
+- "Think better, problem solve better, conduct quality research" → justifies
+  the platform curation being the *prompting/reasoning* layer specifically
+  (thinking, context management, tool use), not API mechanics.
+- Not stated: "integrate Claude into a paid product" → justifies excluding
+  the ~550-page API/billing/enterprise-admin reference. Different job.
+- "This project needs to be secure" → the concrete allowlist/HTTPS/size-cap/
+  path-safety rules at 2.6.5, and the new standing line in `CLAUDE.md`.
 
 ## Open questions
 
