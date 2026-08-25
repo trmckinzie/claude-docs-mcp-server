@@ -21,7 +21,7 @@ of carrying a doc dump in context.
 
 ---
 
-## Phase 2 — `search_docs`  ← current
+## Phase 2 — `search_docs`  ✅ done
 
 Each step is one TDD cycle: write the listed tests, watch them fail, implement,
 go green, commit. Every module in 2.1–2.5 is a **pure function** — no fs, no server.
@@ -331,7 +331,7 @@ questions 2.7 was going to check got a preliminary answer:
   matching's ceiling is fine in general — 2.7 should still probe other
   paraphrase gaps before calling the question closed.
 
-### 2.7 — Run it for real  ✅ done (except the restart, see below)
+### 2.7 — Run it for real  ✅ done, confirmed end to end
 
 **`.mcp.json` registered** at the project root, project scope, committed:
 
@@ -417,6 +417,26 @@ one interactive approval before Claude Code will load its tools, exactly so
 that cloning a repo can't silently run arbitrary commands. Not something an
 agent session should self-approve; requires the user to run `claude`
 interactively in this project and accept the prompt once.
+
+**Confirmed working end to end, after approval, in a fresh session.**
+`claude mcp list` → `claude-docs ... ✔ Connected`; that session's own tool
+listing showed `search_docs`/`get_doc` loaded with full schemas; an explicit
+call, `search_docs("how do skills work")`, returned five real, correctly
+shaped results from the actual 283-document corpus — path, anchor, ranked
+snippet, e.g. `platform/agents-and-tools/agent-skills/overview.md#how-skills-work`.
+The full mechanism — registration, workspace-trust approval, connection, tool
+call, real ranked output — is proven.
+
+**One honest gap left, and it's a different question than "does it work."**
+Two earlier attempts in that same session, given the natural question "how do
+skills work," reached for other tools first — a research agent, then a raw
+filesystem glob over `docs/` (precisely the "don't dump the corpus into
+context" anti-pattern this project's own `CLAUDE.md` warns against) — before
+`search_docs` was ever tried, and only got called once asked for by name.
+So: the tool works, completely, when invoked. Whether Claude reaches for it
+*unprompted* on an ordinary question is unproven and looked shaky on this
+one data point. That's a tool-description/routing question, not a defect in
+anything built in Phase 2 — worth its own investigation, not assumed away.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
