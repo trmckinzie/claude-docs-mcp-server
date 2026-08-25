@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffManifest } from "../../src/fetch/manifest.js";
+import { computeContentHash, diffManifest } from "../../src/fetch/manifest.js";
 import type { ManifestEntry } from "../../src/fetch/manifest.js";
 
 function entry(overrides: Partial<ManifestEntry> = {}): ManifestEntry {
@@ -12,6 +12,36 @@ function entry(overrides: Partial<ManifestEntry> = {}): ManifestEntry {
     ...overrides,
   };
 }
+
+describe("computeContentHash", () => {
+  it("changes when the title changes, even if the body doesn't", () => {
+    // A source page can be retitled without its prose changing (a common
+    // doc-maintenance edit). If the hash only covered the body, that edit
+    // would be classified "unchanged" and the stale title would never be
+    // rewritten to disk -- see scripts/fetch-docs.ts's use of this hash.
+    const a = computeContentHash("Old Title", "Same body text.");
+    const b = computeContentHash("New Title", "Same body text.");
+    expect(a).not.toBe(b);
+  });
+
+  it("changes when the body changes, even if the title doesn't", () => {
+    const a = computeContentHash("Title", "Old body.");
+    const b = computeContentHash("Title", "New body.");
+    expect(a).not.toBe(b);
+  });
+
+  it("is deterministic for the same title and body", () => {
+    expect(computeContentHash("T", "B")).toBe(computeContentHash("T", "B"));
+  });
+
+  it("does not collide when title/body content shifts across the boundary", () => {
+    // A naive `title + body` concatenation would hash ("AB", "C") the same
+    // as ("A", "BC"). The hash must not do that.
+    const a = computeContentHash("AB", "C");
+    const b = computeContentHash("A", "BC");
+    expect(a).not.toBe(b);
+  });
+});
 
 describe("diffManifest", () => {
   it("reports a brand-new path as added, on a first run with no previous manifest", () => {

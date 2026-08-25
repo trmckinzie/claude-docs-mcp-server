@@ -46,6 +46,11 @@ export interface ParsedDoc {
 }
 
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+/** A closing fence, per CommonMark, may carry nothing after the marker but
+ * whitespace -- unlike an opening fence, which may carry an info string
+ * (` ```bash `). Without this distinction, a fenced block that shows fence
+ * syntax as an example (with trailing text on that line) closes early. */
+const FENCE_CLOSE_RE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const HEADING_RE = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 
 export function parseDoc(raw: string, path: string): ParsedDoc {
@@ -164,7 +169,7 @@ function chunkBody(lines: string[], bodyStartLine: number, path: string): Chunk[
   lines.forEach((line, i) => {
     const lineNo = bodyStartLine + i;
 
-    const fenceMatch = FENCE_RE.exec(line);
+    const fenceMatch = fence === null ? FENCE_RE.exec(line) : FENCE_CLOSE_RE.exec(line);
     if (fenceMatch) {
       const marker = fenceMatch[1] ?? "";
       if (fence === null) {

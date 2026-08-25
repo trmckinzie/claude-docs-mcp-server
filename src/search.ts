@@ -51,7 +51,10 @@ export function search(
       path: result.chunk.path,
       anchor: result.chunk.anchor,
       title: result.chunk.title,
-      headingPath: result.chunk.headingPath,
+      // Cloned, not aliased -- the index is a long-lived singleton reused
+      // across every search_docs call, so handing out its own array would
+      // let a caller mutating one hit corrupt every future search's result.
+      headingPath: [...result.chunk.headingPath],
       startLine: result.chunk.startLine,
       score: result.score,
       snippet: buildSnippet(result.chunk.text, new Set(result.matched), maxChars),

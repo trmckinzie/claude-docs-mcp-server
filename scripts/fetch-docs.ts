@@ -11,14 +11,13 @@
  * Verification) and by `npm run typecheck`.
  */
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { classifyHelpCenterArticle } from "../src/fetch/help-center-scope.js";
 import type { ManifestEntry } from "../src/fetch/manifest.js";
-import { diffManifest } from "../src/fetch/manifest.js";
+import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
 import { parseLlmsFull } from "../src/fetch/parse-llms-full.js";
 import { parsePlatformLlmsFull } from "../src/fetch/parse-platform-llms-full.js";
 import { isInPlatformScope } from "../src/fetch/platform-scope.js";
@@ -81,10 +80,6 @@ function toFrontmatterDoc(title: string, sourceUrl: string, fetchedAt: string, b
   return `---\ntitle: "${escapedTitle}"\nsource_url: ${sourceUrl}\nupdated: ${updated}\n---\n\n${body}\n`;
 }
 
-function contentHashOf(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
-}
-
 /** `https://code.claude.com/docs/en/agent-sdk/overview` -> `agent-sdk/overview.md` */
 function stripDocsEnPrefix(sourceUrl: string): string {
   const path = new URL(sourceUrl).pathname.replace(/^\/docs\/en\//, "");
@@ -137,23 +132,34 @@ function firstHeadingOrFallback(body: string, url: string): string {
   return slug.replace(/^[0-9]+-/, "").replace(/-/g, " ");
 }
 
+/** Bounded concurrency: enough to not pay ~350 round-trips serially, low
+ * enough not to hammer a real third-party Help Center with one burst. */
+const HELP_CENTER_FETCH_CONCURRENCY = 6;
+
 async function fetchHelpCenterDocs(): Promise<FetchedDoc[]> {
-  const articleUrls = await discoverHelpCenterArticles();
-  const docs: FetchedDoc[] = [];
-
-  for (const url of articleUrls) {
+  const inScope: Array<{ url: string; collection: string }> = [];
+  for (const url of await discoverHelpCenterArticles()) {
     const collection = classifyHelpCenterArticle(url);
-    if (collection === null) continue;
+    if (collection !== null) inScope.push({ url, collection });
+  }
 
-    const body = await fetchTextSafely(`${url}.md`);
-    const slug = new URL(url).pathname.split("/").pop()?.replace(/^[0-9]+-/, "") ?? "unknown";
-    docs.push({
-      path: `${collection}/${slug}.md`,
-      sourceUrl: url,
-      sourceSite: "support",
-      title: firstHeadingOrFallback(body, url),
-      body,
-    });
+  const docs: FetchedDoc[] = [];
+  for (let i = 0; i < inScope.length; i += HELP_CENTER_FETCH_CONCURRENCY) {
+    const batch = inScope.slice(i, i + HELP_CENTER_FETCH_CONCURRENCY);
+    const fetched = await Promise.all(
+      batch.map(async ({ url, collection }): Promise<FetchedDoc> => {
+        const body = await fetchTextSafely(`${url}.md`);
+        const slug = new URL(url).pathname.split("/").pop()?.replace(/^[0-9]+-/, "") ?? "unknown";
+        return {
+          path: `${collection}/${slug}.md`,
+          sourceUrl: url,
+          sourceSite: "support",
+          title: firstHeadingOrFallback(body, url),
+          body,
+        };
+      }),
+    );
+    docs.push(...fetched);
   }
 
   return docs;
@@ -181,17 +187,17 @@ async function writeDoc(path: string, contents: string): Promise<void> {
 async function main(): Promise<void> {
   const fetchedAt = new Date().toISOString();
 
-  console.log("Fetching code.claude.com...");
+  console.error("Fetching code.claude.com...");
   const codeDocs = await fetchCodeDocs();
-  console.log(`  ${String(codeDocs.length)} pages`);
+  console.error(`  ${String(codeDocs.length)} pages`);
 
-  console.log("Fetching platform.claude.com (curated slice)...");
+  console.error("Fetching platform.claude.com (curated slice)...");
   const platformDocs = await fetchPlatformDocs();
-  console.log(`  ${String(platformDocs.length)} pages`);
+  console.error(`  ${String(platformDocs.length)} pages`);
 
-  console.log("Fetching support.claude.com (Cowork/Desktop/Chrome/Mobile)...");
+  console.error("Fetching support.claude.com (Cowork/Desktop/Chrome/Mobile)...");
   const helpCenterDocs = await fetchHelpCenterDocs();
-  console.log(`  ${String(helpCenterDocs.length)} articles`);
+  console.error(`  ${String(helpCenterDocs.length)} articles`);
 
   const allDocs = [...codeDocs, ...platformDocs, ...helpCenterDocs];
 
@@ -200,13 +206,29 @@ async function main(): Promise<void> {
     sourceUrl: doc.sourceUrl,
     sourceSite: doc.sourceSite,
     fetchedAt,
-    contentHash: contentHashOf(doc.body),
+    contentHash: computeContentHash(doc.title, doc.body),
   }));
 
   const previousManifest = await loadPreviousManifest();
   const diff = diffManifest(previousManifest, freshEntries);
 
   const docsByPath = new Map(allDocs.map((doc) => [doc.path, doc]));
+  if (docsByPath.size !== allDocs.length) {
+    // Two distinct articles reducing to the same slug (e.g. a duplicate or
+    // migrated Help Center article) would otherwise silently overwrite one
+    // another here, with the manifest still recording both as separate
+    // entries -- report it rather than losing content without a trace.
+    const seen = new Set<string>();
+    const collided = new Set<string>();
+    for (const doc of allDocs) {
+      if (seen.has(doc.path)) collided.add(doc.path);
+      seen.add(doc.path);
+    }
+    console.error(
+      `warning: ${String(collided.size)} path collision(s), only the last source wins on disk: ${[...collided].join(", ")}`,
+    );
+  }
+
   const changedPaths = new Set([...diff.added, ...diff.updated]);
   await Promise.all(
     [...changedPaths].map(async (path) => {
@@ -218,13 +240,13 @@ async function main(): Promise<void> {
 
   await writeFile(MANIFEST_PATH, `${JSON.stringify(diff.manifest, null, 2)}\n`, "utf8");
 
-  console.log();
-  console.log(`added:     ${String(diff.added.length)}`);
-  console.log(`updated:   ${String(diff.updated.length)}`);
-  console.log(`unchanged: ${String(diff.unchanged.length)}`);
-  console.log(`gone:      ${String(diff.gone.length)}`);
+  console.error();
+  console.error(`added:     ${String(diff.added.length)}`);
+  console.error(`updated:   ${String(diff.updated.length)}`);
+  console.error(`unchanged: ${String(diff.unchanged.length)}`);
+  console.error(`gone:      ${String(diff.gone.length)}`);
   if (diff.gone.length > 0) {
-    console.log("  (files remain on disk; delete manually if you want them gone)");
+    console.error("  (files remain on disk; delete manually if you want them gone)");
   }
 }
 

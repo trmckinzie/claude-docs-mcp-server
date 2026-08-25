@@ -33,6 +33,20 @@ describe("search", () => {
     expect(typeof top?.snippet).toBe("string");
   });
 
+  it("does not leak a mutable reference into the shared index", async () => {
+    // The index is a long-lived singleton for the life of the server
+    // (src/index.ts builds one and reuses it for every search_docs call).
+    // If a hit's headingPath were the same array object as the chunk's own,
+    // a caller mutating one returned hit would corrupt that chunk's heading
+    // trail for every subsequent search in the same running process.
+    const index = await corpusIndex();
+    const [top] = search(index, "streaming events");
+    top?.headingPath.push("mutated");
+
+    const [again] = search(index, "streaming events");
+    expect(again?.headingPath).toEqual(["Streaming"]);
+  });
+
   it("caps the number of hits", async () => {
     const index = await corpusIndex();
     expect(search(index, "server").length).toBeLessThanOrEqual(

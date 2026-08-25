@@ -4,7 +4,20 @@
  * `docs.manifest.json` on disk. See PLAN.md step 2.6.5.
  */
 
+import { createHash } from "node:crypto";
+
 export type SourceSite = "code" | "platform" | "support";
+
+/**
+ * Hashes title and body together, not body alone -- a source page can be
+ * retitled without its prose changing, and a body-only hash would classify
+ * that as unchanged, leaving a stale title on disk indefinitely. A literal
+ * `\n` separator (illegal inside a title) keeps ("AB", "C") from hashing the
+ * same as ("A", "BC").
+ */
+export function computeContentHash(title: string, body: string): string {
+  return createHash("sha256").update(`${title}\n${body}`).digest("hex");
+}
 
 export interface ManifestEntry {
   /** Path under `docs/`, POSIX-separated. */

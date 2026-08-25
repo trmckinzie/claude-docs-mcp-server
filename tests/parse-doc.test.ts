@@ -80,6 +80,31 @@ describe("chunking", () => {
     expect(doc.chunks).toHaveLength(4);
   });
 
+  it("does not close a fence early on a line that has fence characters plus trailing content", () => {
+    // Per CommonMark, only an opening fence may carry trailing info-string
+    // text (` ```bash `). A closing fence must contain nothing else -- a doc
+    // that shows fence syntax as an example inside its own fenced block must
+    // not have that example line treated as the real close.
+    const doc = parseDoc(
+      [
+        "## Real section",
+        "",
+        "```bash",
+        "echo hi",
+        "``` this looks like a close but has trailing text",
+        "## still inside the fence",
+        "genuinely fenced content",
+        "```",
+        "",
+        "After the real close.",
+      ].join("\n"),
+      "fence-trailing.md",
+    );
+    expect(doc.chunks.map((c) => c.heading)).toEqual(["Real section"]);
+    expect(doc.chunks[0]?.text).toContain("## still inside the fence");
+    expect(doc.chunks[0]?.text).toContain("After the real close.");
+  });
+
   it("ignores a heading inside a tilde fence too", () => {
     const doc = parseDoc(
       ["## Real", "", "~~~", "## Fenced", "~~~", "", "## Also real", ""].join(

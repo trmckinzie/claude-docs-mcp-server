@@ -40,5 +40,9 @@ export async function loadDocs(rootDir: string): Promise<ParsedDoc[]> {
       return parseDoc(raw, path);
     }),
   );
-  return docs.sort((a, b) => a.path.localeCompare(b.path));
+  // Code point order, not localeCompare -- build-index.ts's canonicalise()
+  // depends on chunk position being locale-independent to guarantee two
+  // builds match byte for byte; localeCompare varies with the host's ICU
+  // data and would silently break that guarantee.
+  return docs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }

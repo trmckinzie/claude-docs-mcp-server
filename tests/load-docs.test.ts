@@ -34,6 +34,18 @@ describe("loadDocs", () => {
     await expect(loadDocs(`${FIXTURES}does-not-exist`)).resolves.toEqual([]);
   });
 
+  it("sorts by code point, not locale collation", async () => {
+    // build-index.ts explicitly sorts terms by code point rather than
+    // localeCompare "because it varies with the host's ICU data, and this
+    // index has to be reproducible... comparable byte for byte." That
+    // guarantee depends on loadDocs handing it a locale-independent order
+    // too. Code-point order puts "Banana.md" (0x42) before "apple.md"
+    // (0x61); locale-aware collation reverses that in virtually every
+    // locale, since case is a tiebreaker, not the primary key.
+    const docs = await loadDocs(`${FIXTURES}sort-order`);
+    expect(docs.map((d) => d.path)).toEqual(["Banana.md", "apple.md"]);
+  });
+
   it("ignores non-Markdown files", async () => {
     const docs = await loadDocs(FIXTURES);
     for (const doc of docs) {

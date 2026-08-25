@@ -12,7 +12,7 @@ function serialize(index: Index): string {
     chunks: index.chunks.map((c) => [c.path, c.anchor, c.length]),
     postings: [...index.postings].map(([term, list]) => [
       term,
-      list.map((p) => [p.chunk, p.bodyTf, p.headingTf]),
+      list.map((p) => [p.chunk, p.bodyTf, p.headingTf, p.ancestorTf]),
     ]),
   });
 }
