@@ -33,6 +33,14 @@ unnecessary, say so and why — don't silently drop it.
 
 - Pull a specific file with `@docs/path/to/file.md` when you need it.
 - Once `search_docs` works, use it: query, read the top hits, stop.
+- **For any question about Claude, Claude Code, Cowork, or MCP itself, call
+  `search_docs` first** — before a general web-research agent, before
+  `Glob`/`Grep` over `docs/`. Confirmed failure mode: asked "how do skills
+  work" with no tool named explicitly, Claude reached for a research
+  subagent, then a raw glob listing 100 files under `docs/`, before ever
+  trying `search_docs`. Both are exactly the "dump the corpus into context"
+  anti-pattern this project exists to avoid — a ranked, capped snippet from
+  `search_docs` beats either.
 - Never read all of `docs/` into context. Never `cat` a directory of Markdown
   "to get oriented." Retrieve the section you need, not the corpus.
 - Same rule for source: read the files the task touches, not the whole tree.
