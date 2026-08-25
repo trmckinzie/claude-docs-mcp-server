@@ -427,6 +427,19 @@ snippet, e.g. `platform/agents-and-tools/agent-skills/overview.md#how-skills-wor
 The full mechanism — registration, workspace-trust approval, connection, tool
 call, real ranked output — is proven.
 
+**Downstream synthesis checked for faithfulness, not just presence.** Asked
+to summarize "how skills work" from those five snippets, that session
+produced a cited, per-claim summary. Every specific quote and example was
+verified word-for-word against the real fetched files afterward — "organized
+like an onboarding guide you'd create," the AWS/Microsoft Foundry inheritance
+line, the `/audit` → security/performance/style subagent example, the
+`deploy.md`/`SKILL.md` equivalence, the Haiku/Sonnet/Opus framing — all exact,
+zero fabrication, correctly attributed by path#anchor. It also flagged
+unprompted that a 5-snippet synthesis is narrower than a full-document
+answer and offered `get_doc` to fill gaps — exactly the division of labor
+`search_docs`/`get_doc` were split for. The project doesn't just return
+results; what gets built on top of them holds up.
+
 **One honest gap left, and it's a different question than "does it work."**
 Two earlier attempts in that same session, given the natural question "how do
 skills work," reached for other tools first — a research agent, then a raw
