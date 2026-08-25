@@ -407,12 +407,16 @@ phrasing is informal or emotional rather than naming a technical concept.
 This is the concrete evidence behind the Phase 3 `Ranker`-interface item —
 not urgent, but no longer hypothetical.
 
-**Not done — cannot be done from inside this session.** MCP servers load at
-Claude Code session start. Registering `.mcp.json` doesn't make `search_docs`
-available to *this* running session; it takes effect on the next restart or
-new session. So the literal exit criteria below is unverified until then —
-next session, ask a real question and check whether I reach for `search_docs`
-instead of memory.
+**Checked in a later session — not just "unverified," diagnosed exactly.**
+`search_docs`/`get_doc` did not appear in the next session's tool list. Rather
+than assume the restart alone was insufficient, ran `claude mcp list`, which
+reported the precise mechanism: `claude-docs: ... — ⏸ Pending approval (run
+'claude' to approve)`. This is the workspace-trust gate `docs/claude-code/mcp.md`
+itself describes — a project-scoped server from a committed `.mcp.json` needs
+one interactive approval before Claude Code will load its tools, exactly so
+that cloning a repo can't silently run arbitrary commands. Not something an
+agent session should self-approve; requires the user to run `claude`
+interactively in this project and accept the prompt once.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
