@@ -440,16 +440,35 @@ answer and offered `get_doc` to fill gaps — exactly the division of labor
 `search_docs`/`get_doc` were split for. The project doesn't just return
 results; what gets built on top of them holds up.
 
-**One honest gap left, and it's a different question than "does it work."**
-Two earlier attempts in that same session, given the natural question "how do
-skills work," reached for other tools first — a research agent, then a raw
-filesystem glob over `docs/` (precisely the "don't dump the corpus into
-context" anti-pattern this project's own `CLAUDE.md` warns against) — before
-`search_docs` was ever tried, and only got called once asked for by name.
-So: the tool works, completely, when invoked. Whether Claude reaches for it
-*unprompted* on an ordinary question is unproven and looked shaky on this
-one data point. That's a tool-description/routing question, not a defect in
-anything built in Phase 2 — worth its own investigation, not assumed away.
+**The routing gap, resolved with a before/after comparison, not just patched
+and hoped.** Two earlier attempts, given the natural question "how do skills
+work" with no tool named, reached for other tools first — a research agent,
+then a raw filesystem glob over `docs/` (precisely the "don't dump the
+corpus into context" anti-pattern `CLAUDE.md` warns against) — before
+`search_docs` was ever tried.
+
+**Fix:** an explicit routing rule added to `CLAUDE.md`'s Context discipline
+section — call `search_docs` first for any question about Claude, Claude
+Code, Cowork, or MCP, before a research agent or `Glob`/`Grep`, with the
+confirmed failure mode named as the reason.
+
+**After, in a fresh session:** asked the natural question "How does the
+Claude Code agentic loop work?" — no tool named — and it called `search_docs`
+immediately, unprompted. It then showed real judgment beyond just calling the
+tool once: recognized the top hit as the right section and pulled it whole
+with `get_doc`, then ran a *second*, differently-worded `search_docs` call
+to fill in supporting detail on "models" and "tools" referenced inside that
+section, rather than either stopping short or dumping everything. Final
+synthesis checked word-for-word against the real file: accurate, including a
+genuine quirk in the source itself (a duplicated image `alt` line, likely a
+light/dark asset pair) faithfully preserved by `get_doc` rather than
+silently smoothed over.
+
+One data point after the fix isn't proof the routing problem can never
+recur, but it's exactly the before/after comparison the fix was aimed at
+producing, and it landed. Downstream behavior — the two-call research
+pattern, the faithful synthesis — is also now demonstrated on a genuinely
+unprompted question, not just an explicit tool invocation.
 
 **Exit criteria:** I ask you a question about MCP and you answer by calling
 `search_docs` — not from memory, and not from a context dump.
