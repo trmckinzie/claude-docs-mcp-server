@@ -13,13 +13,16 @@
  * stderr via console.error.
  */
 
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { buildIndex } from "./build-index.js";
+import type { ChangelogEntry } from "./fetch/changelog.js";
 import { loadDocs } from "./load-docs.js";
 import { createServer } from "./server.js";
 
 const docsDir = fileURLToPath(new URL("../docs/", import.meta.url));
+const changelogPath = fileURLToPath(new URL("../docs.changelog.json", import.meta.url));
 
 const docs = await loadDocs(docsDir);
 const index = buildIndex(docs);
@@ -31,7 +34,14 @@ if (index.size === 0) {
   );
 }
 
-const server = createServer(index);
+let changelog: ChangelogEntry[] = [];
+try {
+  changelog = JSON.parse(await readFile(changelogPath, "utf8")) as ChangelogEntry[];
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+}
+
+const server = createServer(index, changelog);
 await server.connect(new StdioServerTransport());
 
 console.error(

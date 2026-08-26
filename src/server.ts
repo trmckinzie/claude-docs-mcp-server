@@ -8,12 +8,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Index } from "./build-index.js";
+import type { ChangelogEntry } from "./fetch/changelog.js";
+import { summarizeChanges } from "./fetch/changelog.js";
 import { search, SEARCH_DEFAULTS } from "./search.js";
 import type { SearchHit } from "./search.js";
 
 const SERVER_INFO = { name: "claude-mcp-server", version: "0.1.0" };
 
-export function createServer(index: Index): McpServer {
+/** Matches SEARCH_DEFAULTS.limit's role for search_docs: small enough that a
+ * digest stays worth reading, big enough to cover a normal sync cadence. */
+const RECENT_CHANGES_DEFAULT_LIMIT = 5;
+
+export function createServer(index: Index, changelog: ChangelogEntry[] = []): McpServer {
   const server = new McpServer(SERVER_INFO);
 
   server.registerTool(
@@ -78,6 +84,32 @@ export function createServer(index: Index): McpServer {
         content: [{ type: "text", text: `# ${title}\n\n${chunk.text}` }],
       };
     },
+  );
+
+  server.registerTool(
+    "recent_changes",
+    {
+      title: "Recent doc changes",
+      description:
+        "Show what changed in the documentation corpus across the most recent " +
+        "syncs -- pages added, updated, or removed. Push-shaped, unlike " +
+        "search_docs: use this to check what's new rather than to look " +
+        "something specific up.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(20)
+          .optional()
+          .describe(`Maximum number of sync entries (default ${String(RECENT_CHANGES_DEFAULT_LIMIT)})`),
+      },
+    },
+    ({ limit }) => ({
+      content: [
+        { type: "text", text: summarizeChanges(changelog, limit ?? RECENT_CHANGES_DEFAULT_LIMIT) },
+      ],
+    }),
   );
 
   return server;

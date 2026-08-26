@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildIndex } from "../src/build-index.js";
 import type { Index } from "../src/build-index.js";
+import type { ChangelogEntry } from "../src/fetch/changelog.js";
 import { parseDoc } from "../src/parse-doc.js";
 import { createServer } from "../src/server.js";
 import { loadFixtures } from "./fixtures/load.js";
@@ -20,8 +21,8 @@ async function corpusIndex(): Promise<Index> {
  * schema validation, request routing, result shaping -- not our handlers in
  * isolation.
  */
-async function connectedClient(index: Index) {
-  const server = createServer(index);
+async function connectedClient(index: Index, changelog: ChangelogEntry[] = []) {
+  const server = createServer(index, changelog);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test-client", version: "0.0.0" });
 
@@ -41,13 +42,13 @@ describe("createServer", () => {
     cleanup = undefined;
   });
 
-  it("advertises search_docs and get_doc with input schemas", async () => {
+  it("advertises search_docs, get_doc, and recent_changes with input schemas", async () => {
     const { client, server } = await connectedClient(await corpusIndex());
     cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(["get_doc", "search_docs"]);
+    expect(names).toEqual(["get_doc", "recent_changes", "search_docs"]);
 
     const searchDocs = tools.find((t) => t.name === "search_docs");
     expect(searchDocs?.inputSchema.properties).toHaveProperty("query");
@@ -163,6 +164,43 @@ describe("createServer", () => {
       arguments: { path: "mcp/transports.md", anchor: "not-a-real-anchor" },
     });
     expect(result.isError).toBe(true);
+  });
+
+  it("returns the changelog digest for recent_changes", async () => {
+    const changelog: ChangelogEntry[] = [
+      { fetchedAt: "2026-08-24T00:00:00.000Z", added: ["claude-code/new-page.md"], updated: [], gone: [] },
+    ];
+    const { client, server } = await connectedClient(await corpusIndex(), changelog);
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "recent_changes", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text).toContain("claude-code/new-page.md");
+  });
+
+  it("reports no history without erroring, when the changelog is empty", async () => {
+    const { client, server } = await connectedClient(await corpusIndex(), []);
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "recent_changes", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text.toLowerCase()).toContain("no changes recorded");
+  });
+
+  it("respects a limit argument on recent_changes", async () => {
+    const changelog: ChangelogEntry[] = [
+      { fetchedAt: "a", added: ["old.md"], updated: [], gone: [] },
+      { fetchedAt: "b", added: ["new.md"], updated: [], gone: [] },
+    ];
+    const { client, server } = await connectedClient(await corpusIndex(), changelog);
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "recent_changes", arguments: { limit: 1 } });
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text).toContain("new.md");
+    expect(block?.text).not.toContain("old.md");
   });
 });
 

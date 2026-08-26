@@ -15,6 +15,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { appendEntry } from "../src/fetch/changelog.js";
+import type { ChangelogEntry } from "../src/fetch/changelog.js";
 import { classifyHelpCenterArticle } from "../src/fetch/help-center-scope.js";
 import type { ManifestEntry } from "../src/fetch/manifest.js";
 import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
@@ -26,6 +28,10 @@ import { assertSafeFetchUrl, isPathInsideDocs } from "../src/fetch/url-safety.js
 const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DOCS_ROOT = join(PROJECT_ROOT, "docs");
 const MANIFEST_PATH = join(PROJECT_ROOT, "docs.manifest.json");
+const CHANGELOG_PATH = join(PROJECT_ROOT, "docs.changelog.json");
+/** Roughly one entry per practical re-fetch cadence -- bounds the file
+ * without needing every sync ever run to answer "what's new." */
+const CHANGELOG_MAX_ENTRIES = 20;
 
 const FETCH_TIMEOUT_MS = 30_000;
 /** Comfortably above the largest real file seen while designing this (the
@@ -175,6 +181,16 @@ async function loadPreviousManifest(): Promise<ManifestEntry[]> {
   }
 }
 
+async function loadPreviousChangelog(): Promise<ChangelogEntry[]> {
+  try {
+    const raw = await readFile(CHANGELOG_PATH, "utf8");
+    return JSON.parse(raw) as ChangelogEntry[];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 async function writeDoc(path: string, contents: string): Promise<void> {
   if (!isPathInsideDocs(DOCS_ROOT, path)) {
     throw new Error(`Refusing to write outside docs/: ${path}`);
@@ -239,6 +255,14 @@ async function main(): Promise<void> {
   );
 
   await writeFile(MANIFEST_PATH, `${JSON.stringify(diff.manifest, null, 2)}\n`, "utf8");
+
+  const previousChangelog = await loadPreviousChangelog();
+  const changelog = appendEntry(
+    previousChangelog,
+    { fetchedAt, added: diff.added, updated: diff.updated, gone: diff.gone },
+    CHANGELOG_MAX_ENTRIES,
+  );
+  await writeFile(CHANGELOG_PATH, `${JSON.stringify(changelog, null, 2)}\n`, "utf8");
 
   console.error();
   console.error(`added:     ${String(diff.added.length)}`);

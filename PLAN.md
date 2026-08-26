@@ -475,6 +475,69 @@ unprompted question, not just an explicit tool invocation.
 
 ---
 
+## Step 2.8 — `recent_changes`: a digest of what changed on the last sync
+
+A full `/code-review high --fix` pass (initial scaffold → HEAD, since this
+project has never used PR branches) landed 8 fixes and deliberately deferred
+2: `src/tokenize.ts`'s cookie/movie plural folding (needs a wordlist to
+disambiguate `-ie`-ending nouns from the regular consonant+y→ies pattern —
+not a narrow patch) and `src/rank.ts`'s `ancestorTf` depth-stacking bug
+(a real fix needs the same full-corpus resweep rigor as the original
+`ancestorBoost` tuning at 2.4/2.7 — well outside code-review scope). Both
+stay deferred; nothing below changes that.
+
+With Phase 2 fully verified end to end, the question was what to build next:
+7 Phase 3 backlog items plus those 2 deferred findings, weighed against each
+other on effort, dependencies, and fit with the two stated project goals
+("become a Claude Code power user," "stay on the cutting edge") — not just
+picking whatever was listed first.
+
+| Item | Effort | Serves the goals? |
+|---|---|---|
+| **Sync digest ("what changed")** | **Low–medium** — `diffManifest` already computes added/updated/gone on every fetch; it was being discarded after a stderr print. | **Directly** — the one *push*-shaped item; `search_docs` only helps when you think to ask. |
+| Cookie/movie plural folding | Low but narrow (needs a disambiguating wordlist) | Marginal — one lexical edge case, doesn't move real-query recall |
+| ancestorTf depth decay | **High** — needs the 2.4/2.7-grade full-corpus resweep, not a quick patch | Real but narrow (rare depth-3+ heading collisions) |
+| `Ranker` interface extraction | Medium to extract, but fixes nothing alone — the actual 2/7 casual-query recall gap needs a second ranker (semantic/embedding) built behind it, which is a much bigger, unscoped lift | High potential, wrong time — building the seam before there's a second implementation to justify it is exactly the "design for a hypothetical future" CLAUDE.md warns against |
+| Strip MDX boilerplate | Medium | Minor; PLAN.md itself notes this was found once, not systematically measured |
+| `list_docs` tool | Medium | Moderate — overlaps some with `search_docs`'s existing `path`/`headingPath` |
+| Topic-organized browse tool | **High**, and flagged in its own backlog entry as scope-creep risk | High value, deliberately not now |
+| Reindex-on-change / cache index to disk | Low–medium each | None — dev/perf convenience, not user-facing |
+| Populate `sourceLastMod` from sitemap | Low | None — stated as optimization-only; correctness doesn't depend on it |
+
+**Decision:** build the sync digest. Best effort-to-goal ratio on the board —
+the hard part (diffing two manifests) was already written, tested, and
+running on every fetch. Zero dependency on any other item, so it doesn't
+foreclose picking `list_docs` or the browse tool next.
+
+**Design**, following the pure-core / IO-at-the-edges split used throughout:
+- `src/fetch/changelog.ts` (pure): `ChangelogEntry` (a trimmed `ManifestDiff`
+  — no `unchanged`, no `manifest`), `appendEntry` (caps history at 20
+  entries), `summarizeChanges` (formats the most recent N, newest first,
+  dropping no-op fetches).
+- `scripts/fetch-docs.ts`: after `diffManifest` runs, appends an entry and
+  writes `docs.changelog.json` next to `docs.manifest.json` — same
+  read-ENOENT-as-empty, write-plain-JSON pattern already used for the
+  manifest. Committed for the same reason the manifest is: metadata *about*
+  the gitignored `docs/`, not the corpus itself.
+- `src/server.ts`: new `recent_changes` tool, no required input (optional
+  `limit`, default 5, mirroring `search_docs`'s own `limit`). `createServer`
+  takes `changelog` as a second, defaulted parameter — same "handed data, not
+  I/O" contract as `index`.
+- `src/index.ts`: reads `docs.changelog.json` next to loading the corpus,
+  passes it into `createServer`.
+
+**Verification:** TDD throughout (`tests/fetch/changelog.test.ts`,
+extended `tests/server.test.ts`), 161/161 green, clean typecheck. Then live:
+ran the real fetch script twice in a row — first run produced a real entry
+(43 pages updated from minor content drift since the last fetch, 0 added,
+0 gone); second run correctly recorded an all-unchanged, no-op entry.
+Started the real server over stdio with a real MCP `Client` and called
+`recent_changes` directly: it returned the first run's digest, correctly
+omitted the second run's no-op entry, and `search_docs`/`get_doc` continued
+working unaffected.
+
+---
+
 ## Phase 3 — backlog (unscheduled)
 
 - Reindex on file change (`fs.watch`) rather than on boot
@@ -490,11 +553,6 @@ unprompted question, not just an explicit tool invocation.
   under BM25 — a short chunk densely packed with matched terms — despite
   carrying little real content. Not urgent; found once, not systematically
   measured.
-- **A digest of what changed on the last sync.** `search_docs` is pull-based: it
-  only helps when I think to query it. "Keep me current" implies something
-  push-shaped too. Different feature, same goal. Traced directly to the same
-  brain dump as the corpus-scope decision below: "always be on the cutting
-  edge of Claude and its features."
 - **A topic-organized browse/`list_docs` tool, fundamentals vs. advanced.**
   The concrete form "teach me... scaffold my knowledge of how Claude works"
   takes beyond what 2.6.5 could cheaply do. 2.6.5 gave the corpus a
