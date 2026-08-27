@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Index } from "./build-index.js";
 import type { ChangelogEntry } from "./fetch/changelog.js";
 import { summarizeChanges } from "./fetch/changelog.js";
+import { listDocuments, listSections } from "./list-docs.js";
 import { search, SEARCH_DEFAULTS } from "./search.js";
 import type { SearchHit } from "./search.js";
 
@@ -110,6 +111,44 @@ export function createServer(index: Index, changelog: ChangelogEntry[] = []): Mc
         { type: "text", text: summarizeChanges(changelog, limit ?? RECENT_CHANGES_DEFAULT_LIMIT) },
       ],
     }),
+  );
+
+  server.registerTool(
+    "list_docs",
+    {
+      title: "List corpus sections or documents",
+      description:
+        "Discover what's in the documentation corpus. Called with no " +
+        "arguments, lists every top-level section and how many documents " +
+        "it has. Given a section, lists that section's documents by path " +
+        "and title. Use this to orient yourself in the corpus, not to " +
+        "fetch content -- use search_docs or get_doc for that.",
+      inputSchema: {
+        section: z
+          .string()
+          .optional()
+          .describe("A section name from a prior list_docs call; omit to list sections"),
+      },
+    },
+    ({ section }) => {
+      if (section === undefined) {
+        const text = listSections(index)
+          .map((s) => `${s.section} (${String(s.count)})`)
+          .join("\n");
+        return { content: [{ type: "text", text }] };
+      }
+      const docs = listDocuments(index, section);
+      if (docs.length === 0) {
+        return {
+          content: [{ type: "text", text: `No documents in section "${section}".` }],
+        };
+      }
+      return {
+        content: [
+          { type: "text", text: docs.map((d) => `${d.path} — ${d.title}`).join("\n") },
+        ],
+      };
+    },
   );
 
   return server;

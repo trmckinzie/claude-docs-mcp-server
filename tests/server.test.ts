@@ -42,13 +42,13 @@ describe("createServer", () => {
     cleanup = undefined;
   });
 
-  it("advertises search_docs, get_doc, and recent_changes with input schemas", async () => {
+  it("advertises search_docs, get_doc, recent_changes, and list_docs with input schemas", async () => {
     const { client, server } = await connectedClient(await corpusIndex());
     cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
 
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(["get_doc", "recent_changes", "search_docs"]);
+    expect(names).toEqual(["get_doc", "list_docs", "recent_changes", "search_docs"]);
 
     const searchDocs = tools.find((t) => t.name === "search_docs");
     expect(searchDocs?.inputSchema.properties).toHaveProperty("query");
@@ -201,6 +201,39 @@ describe("createServer", () => {
     const [block] = result.content as Array<{ type: string; text: string }>;
     expect(block?.text).toContain("new.md");
     expect(block?.text).not.toContain("old.md");
+  });
+
+  it("lists sections with doc counts when list_docs is called with no section", async () => {
+    const { client, server } = await connectedClient(await corpusIndex());
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "list_docs", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text).toContain("api");
+    expect(block?.text).toContain("claude-code");
+    expect(block?.text).toContain("mcp");
+  });
+
+  it("lists documents in a section when list_docs is given one", async () => {
+    const { client, server } = await connectedClient(await corpusIndex());
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "list_docs", arguments: { section: "mcp" } });
+    expect(result.isError).toBeFalsy();
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text).toContain("mcp/transports.md");
+    expect(block?.text).toContain("MCP Transports");
+  });
+
+  it("reports no documents without erroring, for an unrecognised section", async () => {
+    const { client, server } = await connectedClient(await corpusIndex());
+    cleanup = () => Promise.all([client.close(), server.close()]).then(() => undefined);
+
+    const result = await client.callTool({ name: "list_docs", arguments: { section: "not-a-real-section" } });
+    expect(result.isError).toBeFalsy();
+    const [block] = result.content as Array<{ type: string; text: string }>;
+    expect(block?.text.toLowerCase()).toContain("no documents");
   });
 });
 

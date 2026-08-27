@@ -538,27 +538,71 @@ working unaffected.
 
 ---
 
+## Step 2.9 — `list_docs`: corpus discovery
+
+Same weighing exercise as 2.8, against what was left of the Phase 3 backlog
+(reindex-on-file-change, disk-cached index, `list_docs`, the `Ranker`
+interface / recall gap, MDX-boilerplate stripping, the topic-organized browse
+tool, `sourceLastMod`) plus the same two still-deferred code-review findings.
+
+One finding changed the board before the weighing even started: MDX-boilerplate
+stripping was checked against the *current* real corpus first, not assumed
+still valid from the 2.7 note that motivated it. Grepping all 283 docs for
+`<Card>`, `<Steps>`, any `<CapitalizedTag>`, and a literal "Next steps"
+heading returns **zero matches**. Whatever produced that 2.7 observation isn't
+present now — most likely the `.md`/`llms-full.txt` exports never carried raw
+MDX tags to begin with. Dropped from the backlog rather than carried forward
+on faith; the code-review discipline of confirming a bug is real before
+building a fix applies just as much to backlog grooming.
+
+**Decision:** build `list_docs`. Every `IndexedChunk` already carries `path`
+and `title` (`src/build-index.ts`); the corpus already has a topic-organized
+directory layout (`claude-code/`, `platform/`, `cowork/`, `chrome/`,
+`desktop/`, `mobile/`, confirmed on disk) that had never been exposed to a
+client. Zero dependency on anything else on the list, and it's the
+non-scope-creep subset of the bigger browse-tool idea — orientation by real
+directory structure, not a curriculum engine with fundamentals/advanced
+tagging. Everything else on the list is unchanged from 2.8's reasoning
+(`Ranker` interface still has no second ranker to justify it; the browse tool
+still risks the scope creep its own backlog entry warns about; the two perf
+items and `sourceLastMod` remain non-user-facing; both deferred code-review
+findings stand on the same reasoning as before).
+
+**Design:** `src/list-docs.ts` (pure) — `listSections(index)` returns one
+`{ section, count }` per top-level path segment present in the corpus;
+`listDocuments(index, section)` returns that section's `{ path, title }`
+pairs, deduped from `index.chunks` (chunks from one document are contiguous
+and share a denormalised title). A new `list_docs` MCP tool in `src/server.ts`
+takes an optional `section`: omitted, it returns the section summary;
+given, it returns that section's documents, or a plain "no documents in
+section" message for an unrecognised one — mirroring `search_docs`'s
+zero-hits convention rather than erroring.
+
+**Verification:** TDD (`tests/list-docs.test.ts`, extended
+`tests/server.test.ts`), 172/172 green, clean typecheck. Live: called
+`list_docs` with no argument against the real server — the six section
+counts (chrome 4, claude-code 191, cowork 11, desktop 6, mobile 13,
+platform 58) sum to exactly 283, the real document count; called it with
+`section: "cowork"` and the 11 returned paths matched `ls docs/cowork`
+exactly; called it with a made-up section name and got the friendly
+zero-results message, not an error.
+
+---
+
 ## Phase 3 — backlog (unscheduled)
 
 - Reindex on file change (`fs.watch`) rather than on boot
 - Cache index to disk; skip reparse when mtimes are unchanged
-- `list_docs` tool for corpus discovery
 - Extract a `Ranker` interface if lexical recall proves too brittle — 2.4 found
   a concrete case where it does, and 2.7 found it's not just that one case:
   ~2 of 7 real casually-phrased queries against the real corpus missed
   entirely, specifically informal/emotional phrasing that shares no
   vocabulary with doc prose
-- Strip MDX component boilerplate (`<Card>`/`<Steps>` nav link lists, "Next
-  steps" sections) before indexing. 2.7 found these score artificially well
-  under BM25 — a short chunk densely packed with matched terms — despite
-  carrying little real content. Not urgent; found once, not systematically
-  measured.
-- **A topic-organized browse/`list_docs` tool, fundamentals vs. advanced.**
-  The concrete form "teach me... scaffold my knowledge of how Claude works"
-  takes beyond what 2.6.5 could cheaply do. 2.6.5 gave the corpus a
-  topic-organized directory layout for near-zero cost; an actual browsing/
-  learning-path tool is a real feature, deliberately not built at 2.6.5 to
-  avoid scope creep into a curriculum engine.
+- **A fundamentals-vs-advanced browse/learning-path tool.** 2.9's `list_docs`
+  covers plain corpus discovery (what sections exist, what's in one) — this
+  is the further step "teach me... scaffold my knowledge of how Claude works"
+  implies: tagging or ordering material by difficulty, not just by directory.
+  Deliberately not built yet, to avoid scope creep into a curriculum engine.
 - Populate `ManifestEntry.sourceLastMod` from the Help Center's
   `sitemap.xml` and skip re-fetching an article whose `lastmod` hasn't moved.
   Correctness doesn't depend on this (content-hash comparison already works);
