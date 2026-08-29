@@ -48,6 +48,23 @@ const PLURAL_MIN_LENGTH = 4;
 const NOT_A_PLURAL_RE = /(ss|us|is)$/;
 
 /**
+ * Corpus-verified exceptions to the -ies -> -y rule below: singular forms
+ * that already end in "-ie" (the plural just adds "s"), plus one invariant
+ * noun whose singular and plural are identical. Found by grepping every real
+ * "-ies" word across the corpus and checking each against its actual
+ * context -- not a general dictionary, just this corpus's vocabulary. The
+ * general rule assumes a consonant+y root (entry/entries); these five don't
+ * fit that pattern and the -y transform mangles them ("cookies" -> "cooky").
+ */
+const IES_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
+  ["cookies", "cookie"],
+  ["calories", "calorie"],
+  ["ties", "tie"],
+  ["dies", "die"],
+  ["series", "series"],
+]);
+
+/**
  * Deliberately cruder than a real stemmer. It only has to make the singular and
  * plural forms of a word agree with each other -- `responses` and `response`
  * both becoming `response` -- so that a plural query reaches singular prose.
@@ -55,6 +72,8 @@ const NOT_A_PLURAL_RE = /(ss|us|is)$/;
  * the document to the same token, so retrieval still works.
  */
 function foldPlural(token: string): string {
+  const exception = IES_EXCEPTIONS.get(token);
+  if (exception !== undefined) return exception;
   if (token.length >= 5 && token.endsWith("ies")) {
     return `${token.slice(0, -3)}y`;
   }

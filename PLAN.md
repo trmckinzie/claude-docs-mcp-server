@@ -589,6 +589,57 @@ zero-results message, not an error.
 
 ---
 
+## Step 2.10 — the cookie/movie plural-folding finding, resolved
+
+Re-checked the remaining Phase 3 backlog (reindex-on-file-change,
+disk-cached index, `sourceLastMod`, the fundamentals-vs-advanced browse tool)
+plus the two still-deferred code-review findings, same discipline as 2.9:
+verify each premise against real, current state before weighing it. Nothing
+on the backlog proper moved — the two perf items are still non-user-facing,
+`sourceLastMod` is confirmed feasible (`support.claude.com/sitemap.xml`
+verified live, has real `<lastmod>` per article) but still correctness-
+neutral by its own note, and the browse tool is still its own flagged
+scope-creep risk.
+
+What changed the board was re-examining the cookie/movie deferral itself
+instead of the backlog. It was deferred at the code review because "a robust
+fix needs a wordlist... surface form alone can't disambiguate" the two
+`-ies` patterns — true in general, but nobody had measured how big the
+problem actually is *in this corpus*. Grepped every real `-ies`-ending word
+across all 283 docs (`grep -rhoE "[a-zA-Z]+ies" docs | sort | uniq -c`) and
+checked each distinct word against its actual quoted context. Result: 5 real
+words, not an open dictionary problem —
+
+- `cookies` → singular `cookie` (Chrome cookie-clearing instructions)
+- `calories` → singular `calorie` (Android health-data docs)
+- `ties` → verb `tie` ("a gateway... ties the client configuration")
+- `dies` → verb `die` ("a turn dies on an unrecoverable error")
+- `series` → invariant noun — singular and plural are both `series`, not a
+  disambiguation case at all, just a word the existing rule mis-transforms
+
+A false-positive scare along the way — "easies"/"earlies"/"heavies" from the
+first, unanchored grep — turned out to be substring artifacts of
+"easiest"/"earliest"/"heaviest", confirmed away with a `\b`-anchored re-check
+before trusting the word list. Same "verify against real bytes" standard as
+every other fix in this project.
+
+**Fix:** `src/tokenize.ts` — a 5-entry `IES_EXCEPTIONS` map, checked in
+`foldPlural` before the general `-ies → -y` rule. The four singular forms
+already pass through unchanged (none end in a bare `s`); only the plural
+spellings needed remapping.
+
+**Verification:** TDD (`tests/tokenize.test.ts`), 173/173 green, clean
+typecheck. Live: `search_docs("clearing cookies")` now returns
+`chrome/claude-in-chrome-troubleshooting.md` as its top hit — the fix
+verified against a real end-to-end query, not just the unit tests.
+
+The `ancestorTf` depth-decay finding got no such reprieve — its blocking
+condition (a full 3,995-heading resweep to tune a decay curve, matching the
+rigor of the original `ancestorBoost` tuning) is a real methodology cost, not
+a measurement gap, so it stays deferred.
+
+---
+
 ## Phase 3 — backlog (unscheduled)
 
 - Reindex on file change (`fs.watch`) rather than on boot

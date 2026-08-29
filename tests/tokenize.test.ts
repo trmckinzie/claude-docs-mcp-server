@@ -103,6 +103,18 @@ describe("plural folding", () => {
     // "does" must not survive as "doe".
     expect(tokenize("does the server start")).toEqual(["server", "start"]);
   });
+
+  it("folds corpus-verified -ie-base exceptions to their singular, not -y", () => {
+    // The general -ies -> -y rule assumes a consonant+y root (entry/entries).
+    // These five, found by grepping every real -ies word in the corpus and
+    // checking each against its actual context, are the opposite pattern:
+    // a singular that already ends in -ie, plus one invariant noun.
+    expect(tokenize("cookies")).toEqual(tokenize("cookie"));
+    expect(tokenize("calories")).toEqual(tokenize("calorie"));
+    expect(tokenize("ties")).toEqual(tokenize("tie"));
+    expect(tokenize("dies")).toEqual(tokenize("die"));
+    expect(tokenize("series")).toEqual(["series"]);
+  });
 });
 
 /** Snippet building needs to know where a match sits in the source text. */
