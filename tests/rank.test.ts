@@ -131,7 +131,37 @@ describe("rank", () => {
       b: 0.75,
       headingBoost: 2,
       ancestorBoost: 1,
+      titleBoost: 5,
     });
+  });
+
+  it("scores a term found only in the document title", () => {
+    const index = buildIndex([
+      parseDoc(
+        "---\ntitle: Escalate hard decisions\n---\n## Advisor\n\nUse this when stuck.\n",
+        "advisor.md",
+      ),
+      parseDoc("## Other\n\nUnrelated content entirely.\n", "other.md"),
+    ]);
+    const results = rank(index, ["escalate"]);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.chunk.path).toBe("advisor.md");
+    expect(results[0]?.matched).toEqual(["escalate"]);
+  });
+
+  it("weights title matches by titleBoost, like the other fields", () => {
+    const index = buildIndex([
+      parseDoc(
+        "---\ntitle: Escalate hard decisions\n---\n## Advisor\n\nUse this when stuck.\n",
+        "advisor.md",
+      ),
+    ]);
+    // titleBoost: 0 zeroes the term's only contribution, so it drops out
+    // entirely -- same "tf === 0 is excluded" rule as any other field.
+    expect(rank(index, ["escalate"], { titleBoost: 0 })).toHaveLength(0);
+    const boosted = rank(index, ["escalate"], { titleBoost: 10 })[0]?.score ?? 0;
+    const normal = rank(index, ["escalate"])[0]?.score ?? 0;
+    expect(boosted).toBeGreaterThan(normal);
   });
 });
 

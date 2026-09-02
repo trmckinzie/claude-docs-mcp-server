@@ -20,6 +20,15 @@ export interface RankOptions {
    * containing the word nowhere in its own text would outrank it.
    */
   ancestorBoost: number;
+  /**
+   * Multiplier for a term found in the document's title, attributed only to
+   * the document's first chunk. Set from a real-corpus sweep, not a guess --
+   * see PLAN.md step 4.1. A title represents the whole document, and for many
+   * real docs (216/283 have no H1 at all) it is a *more* specific descriptor
+   * of the first chunk than that chunk's own heading, which is why this ends
+   * up weighted above `headingBoost`.
+   */
+  titleBoost: number;
 }
 
 export const BM25_DEFAULTS: RankOptions = {
@@ -27,6 +36,7 @@ export const BM25_DEFAULTS: RankOptions = {
   b: 0.75,
   headingBoost: 2,
   ancestorBoost: 1,
+  titleBoost: 5,
 };
 
 export interface ScoredChunk {
@@ -54,7 +64,10 @@ export function rank(
   queryTokens: string[],
   options: Partial<RankOptions> = {},
 ): ScoredChunk[] {
-  const { k1, b, headingBoost, ancestorBoost } = { ...BM25_DEFAULTS, ...options };
+  const { k1, b, headingBoost, ancestorBoost, titleBoost } = {
+    ...BM25_DEFAULTS,
+    ...options,
+  };
   if (index.size === 0) return [];
 
   const terms = [...new Set(queryTokens)];
@@ -74,7 +87,8 @@ export function rank(
       const tf =
         posting.bodyTf +
         headingBoost * posting.headingTf +
-        ancestorBoost * posting.ancestorTf;
+        ancestorBoost * posting.ancestorTf +
+        titleBoost * posting.titleTf;
       if (tf === 0) continue;
 
       const norm = k1 * (1 - b + (b * chunk.length) / index.avgdl);

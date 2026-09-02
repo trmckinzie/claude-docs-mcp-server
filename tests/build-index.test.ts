@@ -12,7 +12,7 @@ function serialize(index: Index): string {
     chunks: index.chunks.map((c) => [c.path, c.anchor, c.length]),
     postings: [...index.postings].map(([term, list]) => [
       term,
-      list.map((p) => [p.chunk, p.bodyTf, p.headingTf, p.ancestorTf]),
+      list.map((p) => [p.chunk, p.bodyTf, p.headingTf, p.ancestorTf, p.titleTf]),
     ]),
   });
 }
@@ -46,8 +46,8 @@ describe("buildIndex", () => {
       parseDoc("## Beta\n\nserver transport\n", "b.md"),
     ]);
     expect(index.postings.get("server")).toEqual([
-      { chunk: 0, bodyTf: 2, headingTf: 0, ancestorTf: 0 },
-      { chunk: 1, bodyTf: 1, headingTf: 0, ancestorTf: 0 },
+      { chunk: 0, bodyTf: 2, headingTf: 0, ancestorTf: 0, titleTf: 0 },
+      { chunk: 1, bodyTf: 1, headingTf: 0, ancestorTf: 0, titleTf: 0 },
     ]);
   });
 
@@ -56,10 +56,10 @@ describe("buildIndex", () => {
       parseDoc("## Server setup\n\nThe server starts.\n", "c.md"),
     ]);
     expect(index.postings.get("server")).toEqual([
-      { chunk: 0, bodyTf: 1, headingTf: 1, ancestorTf: 0 },
+      { chunk: 0, bodyTf: 1, headingTf: 1, ancestorTf: 0, titleTf: 0 },
     ]);
     expect(index.postings.get("setup")).toEqual([
-      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0 },
+      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0, titleTf: 0 },
     ]);
   });
 
@@ -72,11 +72,48 @@ describe("buildIndex", () => {
     // body. Counting both as heading matches would let the subsection outrank
     // the section actually about stdio, so they are tracked apart.
     expect(index.postings.get("stdio")).toEqual([
-      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0 },
-      { chunk: 1, bodyTf: 0, headingTf: 0, ancestorTf: 1 },
+      { chunk: 0, bodyTf: 0, headingTf: 1, ancestorTf: 0, titleTf: 0 },
+      { chunk: 1, bodyTf: 0, headingTf: 0, ancestorTf: 1, titleTf: 0 },
     ]);
     // Still retrievable from the child: inheritance is weakened, not dropped.
     expect(documentFrequency(index, "stdio")).toBe(2);
+  });
+
+  it("indexes the document title into its first chunk only", () => {
+    const index = buildIndex([
+      parseDoc(
+        "---\ntitle: Escalate hard decisions\n---\n## First\n\nalpha\n\n## Second\n\nbeta\n",
+        "e.md",
+      ),
+    ]);
+    // "Escalate hard decisions" shares no words with either heading or body,
+    // so any hit on these terms can only have come from the title.
+    expect(index.postings.get("escalate")).toEqual([
+      { chunk: 0, bodyTf: 0, headingTf: 0, ancestorTf: 0, titleTf: 1 },
+    ]);
+    expect(index.postings.get("hard")).toEqual([
+      { chunk: 0, bodyTf: 0, headingTf: 0, ancestorTf: 0, titleTf: 1 },
+    ]);
+    // Folded like any other plural: "decisions" -> "decision".
+    expect(index.postings.get("decision")).toEqual([
+      { chunk: 0, bodyTf: 0, headingTf: 0, ancestorTf: 0, titleTf: 1 },
+    ]);
+    // The second chunk of the same document does not also inherit the title --
+    // it isn't an ancestor heading, it's a document-level label attached once.
+    expect(documentFrequency(index, "escalate")).toBe(1);
+  });
+
+  it("counts title tokens into the first chunk's length only", () => {
+    const index = buildIndex([
+      parseDoc(
+        "---\ntitle: Escalate hard decisions\n---\n## First\n\nalpha\n\n## Second\n\nbeta\n",
+        "e.md",
+      ),
+    ]);
+    // Chunk 0: heading "first" (1) + body "alpha" (1) + title "escalate hard
+    // decision" (3) = 5. Chunk 1 carries no title tokens: heading "second" (1)
+    // + body "beta" (1) = 2.
+    expect(index.chunks.map((c) => c.length)).toEqual([5, 2]);
   });
 
   it("measures chunk length as body plus heading tokens", () => {

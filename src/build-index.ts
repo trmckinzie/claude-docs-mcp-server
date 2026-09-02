@@ -22,6 +22,14 @@ export interface Posting {
    * section actually titled that -- see the boosts in `rank.ts`.
    */
   ancestorTf: number;
+  /**
+   * Occurrences in the parsed document's frontmatter/H1 title. Attributed only
+   * to the document's first chunk -- the title is a document-level label, not
+   * an ancestor heading, so it is tracked separately rather than folded into
+   * `ancestorTf`. See PLAN.md step 4.1: 216/283 real docs have no H1 at all,
+   * so their title text is otherwise unindexed entirely.
+   */
+  titleTf: number;
 }
 
 export interface IndexedChunk extends Chunk {
@@ -47,14 +55,18 @@ export function documentFrequency(index: Index, term: string): number {
   return index.postings.get(term)?.length ?? 0;
 }
 
-type Field = "bodyTf" | "headingTf" | "ancestorTf";
+type Field = "bodyTf" | "headingTf" | "ancestorTf" | "titleTf";
 
 export function buildIndex(docs: ParsedDoc[]): Index {
   const chunks: IndexedChunk[] = [];
   const accumulator = new Map<string, Map<number, Posting>>();
 
   for (const doc of docs) {
-    for (const chunk of doc.chunks) {
+    // Attributed only to the document's first chunk below -- see the
+    // `titleTf` doc comment on `Posting`.
+    const titleTokens = tokenize(doc.title);
+
+    doc.chunks.forEach((chunk, i) => {
       const bodyTokens = tokenize(chunk.text);
       const headingTokens = chunk.heading === null ? [] : tokenize(chunk.heading);
       // Ancestors still count, so "### Framing" under "## stdio" remains
@@ -62,18 +74,24 @@ export function buildIndex(docs: ParsedDoc[]): Index {
       const ancestorTokens = chunk.headingPath
         .slice(0, -1)
         .flatMap((heading) => tokenize(heading));
+      const chunkTitleTokens = i === 0 ? titleTokens : [];
 
       const position = chunks.length;
       chunks.push({
         ...chunk,
         title: doc.title,
-        length: bodyTokens.length + headingTokens.length + ancestorTokens.length,
+        length:
+          bodyTokens.length +
+          headingTokens.length +
+          ancestorTokens.length +
+          chunkTitleTokens.length,
       });
 
       accumulate(accumulator, bodyTokens, position, "bodyTf");
       accumulate(accumulator, headingTokens, position, "headingTf");
       accumulate(accumulator, ancestorTokens, position, "ancestorTf");
-    }
+      accumulate(accumulator, chunkTitleTokens, position, "titleTf");
+    });
   }
 
   const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -101,7 +119,7 @@ function accumulate(
 
     let posting = byChunk.get(position);
     if (posting === undefined) {
-      posting = { chunk: position, bodyTf: 0, headingTf: 0, ancestorTf: 0 };
+      posting = { chunk: position, bodyTf: 0, headingTf: 0, ancestorTf: 0, titleTf: 0 };
       byChunk.set(position, posting);
     }
 

@@ -6,6 +6,9 @@ of carrying a doc dump in context.
 
 **Ranking:** in-memory BM25 (k1=1.2, b=0.75). No network, no model, no vector store.
 
+**Status: v1.0, closed.** Phases 1–4 complete; see Phase 4 for what "closed"
+means and what would reopen it.
+
 ---
 
 ## Phase 1 — Scaffold  ✅ done
@@ -640,24 +643,154 @@ a measurement gap, so it stays deferred.
 
 ---
 
-## Phase 3 — backlog (unscheduled)
+## Phase 4 — finishing the project
 
-- Reindex on file change (`fs.watch`) rather than on boot
-- Cache index to disk; skip reparse when mtimes are unchanged
-- Extract a `Ranker` interface if lexical recall proves too brittle — 2.4 found
-  a concrete case where it does, and 2.7 found it's not just that one case:
-  ~2 of 7 real casually-phrased queries against the real corpus missed
-  entirely, specifically informal/emotional phrasing that shares no
-  vocabulary with doc prose
-- **A fundamentals-vs-advanced browse/learning-path tool.** 2.9's `list_docs`
-  covers plain corpus discovery (what sections exist, what's in one) — this
-  is the further step "teach me... scaffold my knowledge of how Claude works"
-  implies: tagging or ordering material by difficulty, not just by directory.
-  Deliberately not built yet, to avoid scope creep into a curriculum engine.
-- Populate `ManifestEntry.sourceLastMod` from the Help Center's
-  `sitemap.xml` and skip re-fetching an article whose `lastmod` hasn't moved.
-  Correctness doesn't depend on this (content-hash comparison already works);
-  it would only save unnecessary fetches.
+The user asked for a plan to *finish* the project, not just pick the next
+increment. Re-checked current state before planning rather than trusting an
+older session's notes: `origin` now points at
+`github.com/trmckinzie/claude-docs-mcp-server` and
+`git rev-list --left-right --count origin/main...HEAD` returns `0  0` — the
+earlier "no remote yet" open loop is already resolved, outside this session.
+`npm test`/`typecheck`/`build` were all clean going in.
+
+What remained was a 4-item unscheduled backlog, one deferred code-review
+finding, and two long-standing "Open questions" below that had never been
+resolved either way. Re-examining those open questions the same way 2.10
+re-examined the cookie/movie deferral — verify against real, current state
+before deciding — turned up the single best-justified piece of work left in
+the project.
+
+### Step 4.1 — index the document title
+
+**Frontmatter `title` was parsed and denormalised onto every chunk for
+display, but never tokenised into the index.** Checked how often that
+actually matters, rather than assume: of all 283 real docs, **216 (76%)
+have no H1 heading anywhere in the body** — the page's top-level section
+starts at `##`, so the title text (the exact phrase a person is most likely
+to type) never appears as any heading. Real examples:
+
+| Path | Frontmatter title | First heading in body |
+|---|---|---|
+| `claude-code/advisor.md` | "Escalate hard decisions with the advisor tool" | "## When to use the advisor" |
+| `claude-code/agent-sdk/agent-loop.md` | "How the agent loop works" | "## The loop at a glance" |
+| `claude-code/admin-setup.md` | "Set up Claude Code for your organization" | "## Choose your API provider" |
+
+Unlike the cookie/movie finding (5 words, a narrow lexical edge case), this
+is a structural gap touching most of the corpus, and it goes straight at the
+project's core purpose: finding the right doc from natural phrasing. The
+other half of the same open question — frontmatter `tags` — closed the
+opposite way: `grep -rl '^tags:' docs` finds **zero** real documents using
+it. Nothing to index; not built.
+
+**Design:** `Posting` gained `titleTf`, tracked apart from `ancestorTf` on
+purpose — a document title is a document-level label, not an inherited
+heading, and folding it into the field about to be closed as
+"known-imperfect, don't touch" (below) would have undone that closure.
+`titleTf` is attributed only to each document's first chunk (`src/build-
+index.ts`), from tokenising `ParsedDoc.title` once per document. `rank.ts`
+gained `titleBoost`, scored the same way `headingBoost`/`ancestorBoost` are.
+
+**Tuned by sweep, not a guess** — same method as the `ancestorBoost` sweep at
+2.7, adapted to what's actually being measured. A per-heading top-1 check
+(the 2.7 method) doesn't fit here: a title-as-query is being ranked against
+the *entire* 283-document corpus, not one document's own heading tree, so
+some collisions on generic titles ("Examples," "Quickstart," "Overview") are
+inherent, not a tuning failure. Measured top-1 and top-5 recall (top-5
+matches `search_docs`'s own default `limit`) across all 283 real titles used
+as their own query:
+
+| `titleBoost` | top-1 | top-5 |
+|---|---|---|
+| 0 (baseline: title indexed but unweighted) | 18.7% | 43.8% |
+| 1 | 46.6% | 78.8% |
+| 2 (= `headingBoost`) | 66.1% | 87.3% |
+| **5 (shipped)** | **88.0%** | **96.1%** |
+| 8 | 90.5% | 96.5% |
+| 12 | 91.2% | 96.5% |
+| 20 | 91.9% | 97.5% |
+
+5 sits right at the knee of the curve — the gains from 8 onward are
+marginal (96.1% → 97.5% top-5 across a 4x boost increase), and pushing the
+weight higher than needed risks generic titles distorting ordinary
+body/heading queries elsewhere. The residual misses at 5 are legitimate
+collisions, not bugs: `claude-code/agent-sdk/quickstart.md`, titled
+"Quickstart," loses to `claude-code/quickstart.md` — a different, equally
+valid "quickstart" doc.
+
+That a title is weighted *above* `headingBoost` (5 vs 2) makes sense once
+stated: for the 216 H1-less docs, the title is the *more* specific
+descriptor of the first chunk, not the chunk's own often-generic first
+heading ("Overview," "Getting started").
+
+**Verification:** TDD (`tests/build-index.test.ts`, `tests/rank.test.ts`),
+177/177 green, clean typecheck and build. Live, on the real server:
+`search_docs("escalate hard decisions with the advisor")`,
+`search_docs("how the agent loop works")`, and
+`search_docs("set up claude code for your organization")` each now return
+the exact intended document as the top hit — the same three titles that were
+unreachable before this step (any query using their own wording matched
+nothing, since none of those words appear in the corresponding body/heading
+text).
+
+### Step 4.2 — close the rest, instead of leaving it unscheduled
+
+Re-verified once more; nothing changed the reasoning from rounds 2.8–2.10.
+Rather than let these sit as "unscheduled" indefinitely, closing each with
+one line of recorded reasoning:
+
+- **Reindex on file change / cache index to disk** — no user-facing benefit:
+  cold start is already sub-second against 283 docs, and `docs/` only
+  changes via an explicit, infrequent `fetch-docs` run that already requires
+  restarting the server process to pick up. **Won't build.**
+- **`sourceLastMod` from the Help Center sitemap** — confirmed feasible
+  (sitemap + `lastmod` verified live at 2.10) but optimization-only from the
+  start; the existing content-hash comparison is already correct. **Won't
+  build.**
+- **Fundamentals-vs-advanced browse/learning-path tool** — flagged as its
+  own scope-creep risk in three straight rounds (2.8, 2.9, 2.10). This
+  project's job is search and discovery over a corpus, not a curriculum
+  engine. **Out of scope, not "later."**
+- **`Ranker` interface extraction** — real evidence exists (2/7 casual
+  queries missed at 2.7) but there's still no second ranker implementation to
+  justify the seam; building the interface first is exactly the "design for
+  a hypothetical future requirement" CLAUDE.md warns against. **Accepted as
+  a known limitation** of a pure-lexical tool. Reopen only alongside an
+  actual plan to build a semantic/embedding ranker — that would be its own
+  project.
+- **`ancestorTf` depth-decay (deferred code-review finding)** — measured at
+  2.7: 1 violation out of 3995 real headings, 15% score margin, and the
+  losing chunk was only weakly on-topic to begin with. The only correct fix
+  (a full corpus resweep at the same rigor as the `ancestorBoost` tuning)
+  costs far more than it buys back. **Accepted as a documented limitation**,
+  not a perpetually "deferred" item.
+
+### Step 4.3 — repo hygiene for a real, pushed, public repository
+
+Added `README.md` (setup, the `.mcp.json` workspace-trust approval gotcha
+from 2.7, and one example per tool) and an MIT `LICENSE` — the repo has been
+pushed to a public GitHub remote for a while, and PLAN.md's build log was
+the only onboarding document that existed.
+
+### Step 4.4 — sign-off
+
+`npm test` (177/177), `typecheck`, and `build` all clean. `package.json`
+bumped `0.1.0` → `1.0.0`: Phase 1–2's exit criteria were met and verified
+end-to-end back at 2.7; this closes Phase 3/4 deliberately rather than
+leaving them open-ended.
+
+**What would reopen this:** a concrete new recall-gap query someone actually
+hits (the way the title gap was found, not a hypothetical one), or a real
+decision to build a semantic/embedding ranker as its own project.
+
+---
+
+## Phase 3 — backlog: closed (see Phase 4)
+
+All remaining items — reindex-on-change, disk-cached index, `sourceLastMod`,
+the `Ranker` interface, the fundamentals/advanced browse tool — were closed
+at step 4.2 above with recorded reasoning, rather than left "unscheduled"
+indefinitely. The one item that did clear the bar (indexing the document
+title) shipped at step 4.1.
 
 ---
 
@@ -705,10 +838,11 @@ chat transcript:
 - "This project needs to be secure" → the concrete allowlist/HTTPS/size-cap/
   path-safety rules at 2.6.5, and the new standing line in `CLAUDE.md`.
 
-## Open questions
+## Open questions — resolved at Phase 4
 
-1. Should frontmatter `tags` and document titles be indexed? Both are parsed
-   today, neither is tokenised into the index, so a document whose title is the
-   only place a term appears cannot be found by it.
-2. Does a hand-written `notes/` directory get created now, or wait until there
-   is something to put in it?
+1. ~~Should frontmatter `tags` and document titles be indexed?~~ **Title:
+   yes** — built at step 4.1, a real gap affecting 216/283 real docs.
+   **Tags: no** — zero real documents use the field; nothing to index.
+2. ~~Does a hand-written `notes/` directory get created now, or wait?~~
+   **No** — the project is closing out at Phase 4; PLAN.md remains the
+   single source of truth for design decisions.
