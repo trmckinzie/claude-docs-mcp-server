@@ -18,8 +18,10 @@ npm run fetch-docs
 ```
 
 `fetch-docs` pulls the corpus into `docs/` (gitignored — it's a rebuildable
-mirror, not a work product; see [PLAN.md](PLAN.md#docs-is-a-cache-not-a-work-product--settled)).
-Re-run it any time to refresh; it only refetches what actually changed.
+mirror, not a work product; see the "`docs/` is a cache, not a work product"
+decision in [PLAN.md](PLAN.md)). Re-run it any time to refresh: it refetches
+every page and compares content hashes, so only genuinely changed files are
+rewritten, and `recent_changes` reports what moved.
 
 ## Registering it with Claude Code
 
