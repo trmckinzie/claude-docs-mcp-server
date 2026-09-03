@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { appendEntry } from "../src/fetch/changelog.js";
 import type { ChangelogEntry } from "../src/fetch/changelog.js";
+import { findDuplicatePaths } from "../src/fetch/collisions.js";
 import { classifyHelpCenterArticle } from "../src/fetch/help-center-scope.js";
 import type { ManifestEntry } from "../src/fetch/manifest.js";
 import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
@@ -234,22 +235,18 @@ async function main(): Promise<void> {
   const previousManifest = await loadPreviousManifest();
   const diff = diffManifest(previousManifest, freshEntries);
 
-  const docsByPath = new Map(allDocs.map((doc) => [doc.path, doc]));
-  if (docsByPath.size !== allDocs.length) {
-    // Two distinct articles reducing to the same slug (e.g. a duplicate or
-    // migrated Help Center article) would otherwise silently overwrite one
-    // another here, with the manifest still recording both as separate
-    // entries -- report it rather than losing content without a trace.
-    const seen = new Set<string>();
-    const collided = new Set<string>();
-    for (const doc of allDocs) {
-      if (seen.has(doc.path)) collided.add(doc.path);
-      seen.add(doc.path);
-    }
-    console.error(
-      `warning: ${String(collided.size)} path collision(s), only the last source wins on disk: ${[...collided].join(", ")}`,
+  // Two distinct articles reducing to the same slug (e.g. a duplicate or
+  // migrated Help Center article) would otherwise silently overwrite one
+  // another on disk, with the manifest still recording both as separate
+  // entries -- a hard failure beats a quiet, undetectable content loss.
+  const collided = findDuplicatePaths(allDocs.map((doc) => doc.path));
+  if (collided.length > 0) {
+    throw new Error(
+      `${String(collided.length)} path collision(s), refusing to write: ${collided.join(", ")}`,
     );
   }
+
+  const docsByPath = new Map(allDocs.map((doc) => [doc.path, doc]));
 
   const changedPaths = new Set([...diff.added, ...diff.updated]);
   await Promise.all(
