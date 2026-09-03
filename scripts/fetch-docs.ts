@@ -23,6 +23,7 @@ import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
 import { parseLlmsFull } from "../src/fetch/parse-llms-full.js";
 import { parsePlatformLlmsFull } from "../src/fetch/parse-platform-llms-full.js";
 import { isInPlatformScope } from "../src/fetch/platform-scope.js";
+import { fetchWithSafeRedirects } from "../src/fetch/safe-fetch.js";
 import { assertSafeFetchUrl, isPathInsideDocs } from "../src/fetch/url-safety.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -48,14 +49,18 @@ interface FetchedDoc {
 
 /** Enforces the host allowlist, HTTPS, a timeout, and a response-size cap.
  * `docs.ts` under CLAUDE.md's Conventions names this pattern as standing,
- * not specific to this one script. */
+ * not specific to this one script. Redirects are not followed transparently
+ * -- plain `fetch` would let a server on the allowlist redirect off it
+ * without `assertSafeFetchUrl` ever seeing the real destination, so each hop
+ * is re-validated before it's followed. */
 async function fetchTextSafely(url: string): Promise<string> {
-  assertSafeFetchUrl(url);
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetchWithSafeRedirects(url, {
+      validate: assertSafeFetchUrl,
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(`${String(response.status)} ${response.statusText} fetching ${url}`);
     }
