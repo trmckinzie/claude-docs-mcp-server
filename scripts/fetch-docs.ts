@@ -23,6 +23,7 @@ import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
 import { parseLlmsFull } from "../src/fetch/parse-llms-full.js";
 import { parsePlatformLlmsFull } from "../src/fetch/parse-platform-llms-full.js";
 import { isInPlatformScope } from "../src/fetch/platform-scope.js";
+import { pruneGoneDocs } from "../src/fetch/prune.js";
 import { fetchWithSafeRedirects } from "../src/fetch/safe-fetch.js";
 import { assertSafeFetchUrl, isPathInsideDocs } from "../src/fetch/url-safety.js";
 
@@ -269,13 +270,23 @@ async function main(): Promise<void> {
   );
   await writeFile(CHANGELOG_PATH, `${JSON.stringify(changelog, null, 2)}\n`, "utf8");
 
+  const pruned = await pruneGoneDocs(DOCS_ROOT, diff.gone);
+  if (pruned.skipped.length > 0) {
+    // Should be unreachable -- diff.gone only ever names paths this same
+    // process wrote from a manifest it also wrote. Loud rather than silent
+    // if that invariant is ever violated (e.g. a hand-edited manifest).
+    console.error(
+      `warning: refused to delete ${String(pruned.skipped.length)} gone path(s) outside docs/: ${pruned.skipped.join(", ")}`,
+    );
+  }
+
   console.error();
   console.error(`added:     ${String(diff.added.length)}`);
   console.error(`updated:   ${String(diff.updated.length)}`);
   console.error(`unchanged: ${String(diff.unchanged.length)}`);
   console.error(`gone:      ${String(diff.gone.length)}`);
-  if (diff.gone.length > 0) {
-    console.error("  (files remain on disk; delete manually if you want them gone)");
+  if (pruned.deleted.length > 0) {
+    console.error(`  deleted from disk: ${pruned.deleted.join(", ")}`);
   }
 }
 
