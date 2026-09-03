@@ -4,6 +4,7 @@ dist/
 .env
 .env.*
 .DS_Store
+.claude/settings.local.json  # per-machine Claude Code settings, not shared config
 
 # The docs corpus is a regenerable mirror, rebuilt by the fetch script from
 # docs.manifest.json. See "Decisions" in PLAN.md.
