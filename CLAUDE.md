@@ -58,3 +58,9 @@ unnecessary, say so and why — don't silently drop it.
   explicit allowlist, requires HTTPS, and treats the response as inert text —
   never executed, never eval'd. Applies to `scripts/fetch-docs.ts` and to
   whatever fetches something next.
+
+## Model routing
+
+Sonnet executes, Opus escalates, Fable only on Travis's explicit say-so. This repo's subagents
+live in `.claude/agents/`; the doctrine they point to is `90_Meta/Model Routing.md` in the dev
+mono-vault containing this repo — personal workflow config, not part of this project.
