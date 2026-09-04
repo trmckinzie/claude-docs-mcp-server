@@ -3,8 +3,15 @@ dist/
 *.log
 .env
 .env.*
+!.env.example
 .DS_Store
-.claude/settings.local.json  # per-machine Claude Code settings, not shared config
+# Per-machine Claude Code settings, not shared config.
+# This comment is on its own line deliberately: .gitignore has no inline
+# comments, so the previous form - pattern followed by two spaces and a '#' -
+# was parsed as a literal filename including the comment text, and matched
+# nothing. It only appeared to work because a machine-global ignore file
+# happened to cover the same path, which would not protect a fresh clone.
+.claude/settings.local.json
 
 # The docs corpus is a regenerable mirror, rebuilt by the fetch script from
 # docs.manifest.json. See "Decisions" in PLAN.md.
