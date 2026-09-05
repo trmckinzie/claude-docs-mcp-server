@@ -1,8 +1,10 @@
 # claude-mcp-server
 
-Local MCP server that indexes a Markdown corpus in `docs/` and exposes a
-`search_docs` tool, so Claude can fetch its own current instructions on demand
-instead of carrying them in context.
+Local MCP server that indexes a Markdown corpus in `docs/` and exposes it as
+four tools — `search_docs` (ranked excerpts), `get_doc` (one full section),
+`list_docs` (corpus discovery), and `recent_changes` (what moved on the last
+sync) — so Claude can fetch its own current instructions on demand instead of
+carrying them in context.
 
 Stack: Node 24 · TypeScript (ESM) · `@modelcontextprotocol/sdk` · Vitest
 

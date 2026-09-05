@@ -130,6 +130,11 @@ tracked separately so the ranker can weight them down.
 **Not indexed yet:** frontmatter `tags` and the document `title` are parsed but
 never tokenised into the index. Revisit at 2.5 if recall is poor.
 
+**Resolved at 4.1.** Recall *was* poor, and measurably so: 216 of 283 real
+docs have no H1, so their title text was unreachable by any query. `Posting`
+gained `titleTf` and the ranker a swept `titleBoost`. `tags` stays unindexed
+— zero real documents use the field.
+
 ### 2.4 — BM25 ranker  ✅ done
 `rank(index, queryTokens, opts?) -> ScoredChunk[]` in `src/rank.ts`, plus
 `inverseDocumentFrequency` and `BM25_DEFAULTS`. 15 tests in `tests/rank.test.ts`.
