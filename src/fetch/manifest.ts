@@ -41,6 +41,32 @@ export interface ManifestDiff {
   manifest: ManifestEntry[];
 }
 
+/**
+ * Adds back the previous entry for any path whose fetch failed, so a failure
+ * cannot be mistaken for a deletion.
+ *
+ * Without this, one article 500ing drops it from the fresh set, `diffManifest`
+ * reports it `gone`, and the pruner deletes real content off disk over a
+ * transient network error. A fresh entry always wins over a carried-forward
+ * one -- a path only counts as failed if nothing was fetched for it.
+ */
+export function carryForwardEntries(
+  fresh: readonly ManifestEntry[],
+  previous: readonly ManifestEntry[],
+  failedPaths: readonly string[],
+): ManifestEntry[] {
+  const freshPaths = new Set(fresh.map((entry) => entry.path));
+  const previousByPath = new Map(previous.map((entry) => [entry.path, entry]));
+
+  const carried: ManifestEntry[] = [];
+  for (const path of new Set(failedPaths)) {
+    if (freshPaths.has(path)) continue;
+    const before = previousByPath.get(path);
+    if (before !== undefined) carried.push(before);
+  }
+  return [...fresh, ...carried];
+}
+
 export function diffManifest(
   previous: readonly ManifestEntry[],
   fresh: readonly ManifestEntry[],

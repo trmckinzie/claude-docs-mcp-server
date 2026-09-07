@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectPathsToWrite } from "../../src/fetch/select-writes.js";
+import { selectOrphanedPaths, selectPathsToWrite } from "../../src/fetch/reconcile.js";
 
 /**
  * The bug this module exists for: `docs.manifest.json` is committed while
@@ -40,5 +40,36 @@ describe("selectPathsToWrite", () => {
 
   it("writes nothing for an empty diff", () => {
     expect(selectPathsToWrite({ added: [], updated: [], unchanged: [] }, new Set())).toEqual([]);
+  });
+});
+
+/**
+ * The other direction of the same reconciliation. Deleting only what the
+ * manifest diff calls `gone` cannot heal a file the manifest has already
+ * forgotten -- e.g. a run interrupted between writing the manifest and
+ * pruning, which drops the path from the manifest while leaving it on disk.
+ * It would then be absent from every future diff and served stale forever.
+ * The fresh manifest is the whole truth about what belongs in `docs/`.
+ */
+describe("selectOrphanedPaths", () => {
+  it("finds a file on disk that the manifest no longer lists", () => {
+    expect(selectOrphanedPaths(["a.md"], ["a.md", "stale.md"])).toEqual(["stale.md"]);
+  });
+
+  it("returns nothing when disk and manifest agree", () => {
+    expect(selectOrphanedPaths(["a.md", "b.md"], ["a.md", "b.md"])).toEqual([]);
+  });
+
+  it("ignores manifest paths that are not on disk", () => {
+    // That case is selectPathsToWrite's job -- it means "restore", not "delete".
+    expect(selectOrphanedPaths(["a.md", "b.md"], ["a.md"])).toEqual([]);
+  });
+
+  it("returns a sorted, deduplicated list", () => {
+    expect(selectOrphanedPaths([], ["z.md", "a.md", "a.md"])).toEqual(["a.md", "z.md"]);
+  });
+
+  it("treats an empty manifest as making every file on disk an orphan", () => {
+    expect(selectOrphanedPaths([], ["a.md"])).toEqual(["a.md"]);
   });
 });

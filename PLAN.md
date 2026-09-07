@@ -833,16 +833,56 @@ filters before slicing, so the limit counts entries the caller can actually
 see. (Fixed with a failing test first; the existing limit test used only
 meaningful entries, so it never caught the interaction.)
 
-**Two lower-severity findings, reported and left open** (both real, neither a
-blocker; recorded here so they aren't rediscovered from scratch):
+**Two lower-severity findings** were reported here and left open at first;
+both are now fixed at step 4.6 below.
 
-- `pruneGoneDocs` runs *after* the manifest write, so an interruption between
-  the two orphans a stale doc permanently — it appears in neither the next
-  previous-manifest nor the next fetch, so it is never pruned again, and
-  `loadDocs` keeps serving it.
-- The Help Center batch uses `Promise.all`, so one renamed or 404'd article
-  aborts the entire refresh and discards the already-fetched code and
-  platform pages.
+### Step 4.6 — the two open findings, closed
+
+**Orphaned docs (prune ordering).** `pruneGoneDocs` ran *after* the manifest
+write and deleted only `diff.gone`, so an interruption between the two
+dropped a path from the manifest while leaving the file on disk — after
+which no future diff could ever name it, and `loadDocs` served it stale
+forever. Two changes, because the ordering alone would prevent new orphans
+without healing existing ones:
+
+- **Deletion is now driven by the disk, not the diff.** The fresh manifest is
+  the complete statement of what belongs under `docs/`, so
+  `selectOrphanedPaths(manifestPaths, onDisk)` treats anything else as an
+  orphan. That subsumes `gone` and also catches leftovers from a past crash,
+  a rename, or a hand-dropped file.
+- **Pruning happens before the manifest write.** An interruption now leaves
+  the *old* manifest in place, so the next run simply retries — the same
+  self-healing ordering the doc writes already relied on.
+
+**One failed article no longer aborts the refresh — without becoming a
+deletion.** The naive fix (`Promise.allSettled`) would have introduced a
+worse bug than the one it fixed: a failed fetch drops the doc from the fresh
+set, `diffManifest` reports it `gone`, and the pruner deletes real content
+over a transient 500. The `Promise.all` that aborted everything was, by
+accident, the only thing preventing that. So the fix has two halves:
+`allSettled` collects failures and keeps going, and
+`carryForwardEntries(fresh, previous, failedPaths)` restores each failed
+path's previous manifest entry, so it reads as "unknown" rather than
+"deleted" and is neither rewritten nor removed. A run where *every* article
+fails still throws — that is systemic, and shouldn't exit 0.
+
+**Verified end to end, both directions at once**, on the real pipeline rather
+than in unit tests alone: planted an orphan the manifest doesn't name
+(`cowork/zz-orphan-should-be-deleted.md`) and deleted a real doc
+(`claude-code/mcp.md`), then ran the fetch. It reported `restoring 1
+unchanged file(s) missing from docs/` and `deleted from disk:
+cowork/zz-orphan-should-be-deleted.md` — while `gone: 0`, which is the proof
+that deletion is disk-driven now, since the old code had nothing to act on.
+285 files, corpus intact.
+
+New pure modules/functions, all TDD'd: `src/fetch/reconcile.ts`
+(`selectPathsToWrite` + `selectOrphanedPaths`, renamed from `select-writes.ts`
+now that it reconciles in both directions) and `carryForwardEntries` in
+`manifest.ts`. 205/205 tests.
+
+**Dependencies brought fully current** in the same pass: `@types/node`, `tsx`,
+and `zod` to latest, and `vitest` 4.1.11 → **5.0.0** (a major bump, taken
+because the suite passes clean on it). 0 advisories.
 
 ---
 

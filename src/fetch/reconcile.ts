@@ -1,5 +1,6 @@
 /**
- * Decides which fetched docs actually have to be written to disk.
+ * Reconciles the manifest against what is actually on disk, in both
+ * directions: which docs have to be written, and which have to be removed.
  *
  * A content-hash diff alone is not enough, because the manifest and the corpus
  * have different lifetimes: `docs.manifest.json` is committed, `docs/` is
@@ -32,5 +33,28 @@ export function selectPathsToWrite(
   for (const path of diff.unchanged) {
     if (!presentOnDisk.has(path)) needed.add(path);
   }
-  return [...needed].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sorted(needed);
+}
+
+/**
+ * Returns every file on disk that the fresh manifest does not list.
+ *
+ * Deleting only the diff's `gone` paths is not enough to keep `docs/` a true
+ * mirror: a run interrupted between writing the manifest and pruning drops a
+ * path from the manifest while leaving the file on disk, after which it never
+ * appears in any future diff and is served stale forever. The fresh manifest
+ * is the complete statement of what belongs in `docs/`, so anything else
+ * under it is an orphan -- which also covers `gone` paths, hand-dropped
+ * files, and leftovers from a renamed source.
+ */
+export function selectOrphanedPaths(
+  manifestPaths: readonly string[],
+  onDiskPaths: readonly string[],
+): string[] {
+  const expected = new Set(manifestPaths);
+  return sorted(new Set(onDiskPaths.filter((path) => !expected.has(path))));
+}
+
+function sorted(paths: ReadonlySet<string>): string[] {
+  return [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }

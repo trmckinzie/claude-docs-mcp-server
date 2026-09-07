@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeContentHash, diffManifest } from "../../src/fetch/manifest.js";
+import { carryForwardEntries, computeContentHash, diffManifest } from "../../src/fetch/manifest.js";
 import type { ManifestEntry } from "../../src/fetch/manifest.js";
 
 function entry(overrides: Partial<ManifestEntry> = {}): ManifestEntry {
@@ -115,5 +115,45 @@ describe("diffManifest", () => {
     expect(result.added).toEqual(["m.md"]);
     expect(result.unchanged).toEqual(["a.md", "z.md"]);
     expect(result.manifest.map((e) => e.path)).toEqual(["a.md", "m.md", "z.md"]);
+  });
+});
+
+/**
+ * A per-article fetch that fails must not read as a deletion. Without this,
+ * a transient 500 on one Help Center article drops it from the fresh set,
+ * `diffManifest` calls it `gone`, and the pruner deletes real content off
+ * disk over a network blip. Carrying the previous entry forward keeps the
+ * path in the manifest, so it is neither rewritten nor removed.
+ */
+describe("carryForwardEntries", () => {
+  it("restores a previous entry for a path that failed to fetch", () => {
+    const previous = [entry({ path: "cowork/a.md", contentHash: "old" })];
+    const result = carryForwardEntries([], previous, ["cowork/a.md"]);
+    expect(result).toEqual(previous);
+  });
+
+  it("keeps the fresh entry when the path was fetched successfully", () => {
+    const previous = [entry({ path: "a.md", contentHash: "old" })];
+    const fresh = [entry({ path: "a.md", contentHash: "new" })];
+    // Not in the failed list, so the fresh fetch wins.
+    expect(carryForwardEntries(fresh, previous, [])).toEqual(fresh);
+  });
+
+  it("never lets a carried-forward entry shadow a fresh one", () => {
+    const previous = [entry({ path: "a.md", contentHash: "old" })];
+    const fresh = [entry({ path: "a.md", contentHash: "new" })];
+    const result = carryForwardEntries(fresh, previous, ["a.md"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.contentHash).toBe("new");
+  });
+
+  it("skips a failed path with no previous entry to fall back on", () => {
+    // A brand-new article that failed on its first fetch: nothing to preserve.
+    expect(carryForwardEntries([], [], ["cowork/new.md"])).toEqual([]);
+  });
+
+  it("returns the fresh set untouched when nothing failed", () => {
+    const fresh = [entry({ path: "a.md" })];
+    expect(carryForwardEntries(fresh, [entry({ path: "b.md" })], [])).toEqual(fresh);
   });
 });

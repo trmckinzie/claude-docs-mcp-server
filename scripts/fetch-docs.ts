@@ -11,8 +11,8 @@
  * Verification) and by `npm run typecheck`.
  */
 
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { appendEntry } from "../src/fetch/changelog.js";
@@ -20,12 +20,12 @@ import type { ChangelogEntry } from "../src/fetch/changelog.js";
 import { findDuplicatePaths } from "../src/fetch/collisions.js";
 import { classifyHelpCenterArticle } from "../src/fetch/help-center-scope.js";
 import type { ManifestEntry } from "../src/fetch/manifest.js";
-import { computeContentHash, diffManifest } from "../src/fetch/manifest.js";
+import { carryForwardEntries, computeContentHash, diffManifest } from "../src/fetch/manifest.js";
 import { parseLlmsFull } from "../src/fetch/parse-llms-full.js";
 import { parsePlatformLlmsFull } from "../src/fetch/parse-platform-llms-full.js";
 import { isInPlatformScope } from "../src/fetch/platform-scope.js";
 import { pruneGoneDocs } from "../src/fetch/prune.js";
-import { selectPathsToWrite } from "../src/fetch/select-writes.js";
+import { selectOrphanedPaths, selectPathsToWrite } from "../src/fetch/reconcile.js";
 import { fetchWithSafeRedirects } from "../src/fetch/safe-fetch.js";
 import { assertSafeFetchUrl, isPathInsideDocs } from "../src/fetch/url-safety.js";
 
@@ -150,7 +150,29 @@ function firstHeadingOrFallback(body: string, url: string): string {
  * enough not to hammer a real third-party Help Center with one burst. */
 const HELP_CENTER_FETCH_CONCURRENCY = 6;
 
-async function fetchHelpCenterDocs(): Promise<FetchedDoc[]> {
+function helpCenterPath(url: string, collection: string): string {
+  const slug = new URL(url).pathname.split("/").pop()?.replace(/^[0-9]+-/, "") ?? "unknown";
+  return `${collection}/${slug}.md`;
+}
+
+interface HelpCenterResult {
+  docs: FetchedDoc[];
+  /** Intended on-disk paths whose article could not be fetched this run. The
+   * path is derived from the URL before fetching, so it is known even for a
+   * failure -- which is what lets `carryForwardEntries` protect it. */
+  failedPaths: string[];
+}
+
+/**
+ * One article failing must not fail the run, and must not look like a
+ * deletion. The Help Center is a third party that renames and unpublishes
+ * articles between the homepage scrape and the fetch, so a rejection here is
+ * routine rather than exceptional; aborting discarded the 250 already-fetched
+ * code and platform pages with it. Failures are collected instead and their
+ * paths protected downstream. A total failure still throws -- that is a
+ * systemic problem, not one missing article, and should not exit 0.
+ */
+async function fetchHelpCenterDocs(): Promise<HelpCenterResult> {
   const inScope: Array<{ url: string; collection: string }> = [];
   for (const url of await discoverHelpCenterArticles()) {
     const collection = classifyHelpCenterArticle(url);
@@ -158,14 +180,14 @@ async function fetchHelpCenterDocs(): Promise<FetchedDoc[]> {
   }
 
   const docs: FetchedDoc[] = [];
+  const failedPaths: string[] = [];
   for (let i = 0; i < inScope.length; i += HELP_CENTER_FETCH_CONCURRENCY) {
     const batch = inScope.slice(i, i + HELP_CENTER_FETCH_CONCURRENCY);
-    const fetched = await Promise.all(
+    const settled = await Promise.allSettled(
       batch.map(async ({ url, collection }): Promise<FetchedDoc> => {
         const body = await fetchTextSafely(`${url}.md`);
-        const slug = new URL(url).pathname.split("/").pop()?.replace(/^[0-9]+-/, "") ?? "unknown";
         return {
-          path: `${collection}/${slug}.md`,
+          path: helpCenterPath(url, collection),
           sourceUrl: url,
           sourceSite: "support",
           title: firstHeadingOrFallback(body, url),
@@ -173,10 +195,26 @@ async function fetchHelpCenterDocs(): Promise<FetchedDoc[]> {
         };
       }),
     );
-    docs.push(...fetched);
+
+    settled.forEach((outcome, index) => {
+      const source = batch[index];
+      if (source === undefined) return;
+      if (outcome.status === "fulfilled") {
+        docs.push(outcome.value);
+        return;
+      }
+      failedPaths.push(helpCenterPath(source.url, source.collection));
+      console.error(`  warning: ${source.url} failed: ${String(outcome.reason)}`);
+    });
   }
 
-  return docs;
+  if (inScope.length > 0 && docs.length === 0) {
+    throw new Error(
+      `All ${String(inScope.length)} Help Center articles failed to fetch -- refusing to treat that as an empty collection`,
+    );
+  }
+
+  return { docs, failedPaths };
 }
 
 async function loadPreviousManifest(): Promise<ManifestEntry[]> {
@@ -199,22 +237,29 @@ async function loadPreviousChangelog(): Promise<ChangelogEntry[]> {
   }
 }
 
-/** Which of `paths` actually exist under `docs/` right now. The manifest can
- * only report what the *source* did; this reports what the disk has. */
-async function listExistingDocPaths(paths: readonly string[]): Promise<Set<string>> {
-  const present = new Set<string>();
-  await Promise.all(
-    paths.map(async (path) => {
-      if (!isPathInsideDocs(DOCS_ROOT, path)) return;
-      try {
-        await access(join(DOCS_ROOT, path));
-        present.add(path);
-      } catch {
-        // Missing (or unreadable) counts as absent -- it gets rewritten.
-      }
+/** Every Markdown file actually under `docs/` right now, as POSIX-relative
+ * paths. The manifest only reports what the *source* did; this reports what
+ * the disk has, which is what both halves of the reconciliation need -- files
+ * missing from disk get rewritten, files missing from the manifest get
+ * removed. Walks rather than stat-ing the manifest's paths, because an orphan
+ * is by definition a file the manifest does not name. */
+async function listDocPathsOnDisk(dir = DOCS_ROOT): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return listDocPathsOnDisk(full);
+      return entry.name.endsWith(".md") ? [relative(DOCS_ROOT, full).split(sep).join("/")] : [];
     }),
   );
-  return present;
+  return nested.flat();
 }
 
 async function writeDoc(path: string, contents: string): Promise<void> {
@@ -238,10 +283,15 @@ async function main(): Promise<void> {
   console.error(`  ${String(platformDocs.length)} pages`);
 
   console.error("Fetching support.claude.com (Cowork/Desktop/Chrome/Mobile)...");
-  const helpCenterDocs = await fetchHelpCenterDocs();
-  console.error(`  ${String(helpCenterDocs.length)} articles`);
+  const helpCenter = await fetchHelpCenterDocs();
+  console.error(`  ${String(helpCenter.docs.length)} articles`);
+  if (helpCenter.failedPaths.length > 0) {
+    console.error(
+      `  ${String(helpCenter.failedPaths.length)} article(s) failed; keeping their existing copies`,
+    );
+  }
 
-  const allDocs = [...codeDocs, ...platformDocs, ...helpCenterDocs];
+  const allDocs = [...codeDocs, ...platformDocs, ...helpCenter.docs];
 
   const freshEntries: ManifestEntry[] = allDocs.map((doc) => ({
     path: doc.path,
@@ -252,7 +302,15 @@ async function main(): Promise<void> {
   }));
 
   const previousManifest = await loadPreviousManifest();
-  const diff = diffManifest(previousManifest, freshEntries);
+  // A failed article is "unknown," not "deleted" -- carrying its previous
+  // entry forward keeps it out of `gone`, so a transient error cannot delete
+  // real content off disk.
+  const reconciledEntries = carryForwardEntries(
+    freshEntries,
+    previousManifest,
+    helpCenter.failedPaths,
+  );
+  const diff = diffManifest(previousManifest, reconciledEntries);
 
   // Two distinct articles reducing to the same slug (e.g. a duplicate or
   // migrated Help Center article) would otherwise silently overwrite one
@@ -271,8 +329,8 @@ async function main(): Promise<void> {
   // gitignored, so a fresh clone diffs every path as "unchanged" against a
   // corpus that isn't there. Only the filesystem can answer that, so the
   // manifest diff is reconciled against what's actually on disk.
-  const presentOnDisk = await listExistingDocPaths(diff.manifest.map((entry) => entry.path));
-  const pathsToWrite = selectPathsToWrite(diff, presentOnDisk);
+  const onDisk = await listDocPathsOnDisk();
+  const pathsToWrite = selectPathsToWrite(diff, new Set(onDisk));
   const restored = pathsToWrite.length - (diff.added.length + diff.updated.length);
   if (restored > 0) {
     console.error(`  restoring ${String(restored)} unchanged file(s) missing from docs/`);
@@ -286,6 +344,24 @@ async function main(): Promise<void> {
     }),
   );
 
+  // Deleting is driven by the disk, not by `diff.gone`, and happens *before*
+  // the manifest is written. Both matter: the manifest is the complete
+  // statement of what belongs here, so anything else under docs/ is an
+  // orphan (including one left by an earlier interrupted run, which `gone`
+  // can no longer name); and pruning first means an interruption leaves the
+  // old manifest in place, so the next run simply retries rather than
+  // forgetting the file forever.
+  const orphans = selectOrphanedPaths(
+    diff.manifest.map((entry) => entry.path),
+    onDisk,
+  );
+  const pruned = await pruneGoneDocs(DOCS_ROOT, orphans);
+  if (pruned.skipped.length > 0) {
+    console.error(
+      `warning: refused to delete ${String(pruned.skipped.length)} path(s) outside docs/: ${pruned.skipped.join(", ")}`,
+    );
+  }
+
   await writeFile(MANIFEST_PATH, `${JSON.stringify(diff.manifest, null, 2)}\n`, "utf8");
 
   const previousChangelog = await loadPreviousChangelog();
@@ -295,16 +371,6 @@ async function main(): Promise<void> {
     CHANGELOG_MAX_ENTRIES,
   );
   await writeFile(CHANGELOG_PATH, `${JSON.stringify(changelog, null, 2)}\n`, "utf8");
-
-  const pruned = await pruneGoneDocs(DOCS_ROOT, diff.gone);
-  if (pruned.skipped.length > 0) {
-    // Should be unreachable -- diff.gone only ever names paths this same
-    // process wrote from a manifest it also wrote. Loud rather than silent
-    // if that invariant is ever violated (e.g. a hand-edited manifest).
-    console.error(
-      `warning: refused to delete ${String(pruned.skipped.length)} gone path(s) outside docs/: ${pruned.skipped.join(", ")}`,
-    );
-  }
 
   console.error();
   console.error(`added:     ${String(diff.added.length)}`);
