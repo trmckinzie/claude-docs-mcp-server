@@ -278,5 +278,22 @@
       "mobile/use-claude-with-android-apps.md"
     ],
     "gone": []
+  },
+  {
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "added": [],
+    "updated": [
+      "chrome/claude-in-chrome-permissions-guide.md",
+      "chrome/get-started-with-claude-in-chrome.md",
+      "cowork/assign-tasks-from-anywhere-in-claude-cowork.md",
+      "cowork/get-started-with-claude-cowork.md",
+      "cowork/organize-your-tasks-with-projects-in-claude-cowork.md",
+      "cowork/schedule-recurring-tasks-in-claude-cowork.md",
+      "desktop/enabling-and-using-the-desktop-extension-allowlist.md",
+      "desktop/getting-started-with-local-mcp-servers-on-claude-desktop.md",
+      "desktop/use-quick-entry-with-claude-desktop-on-mac.md",
+      "mobile/use-claude-with-android-apps.md"
+    ],
+    "gone": []
   }
 ]

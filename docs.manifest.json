@@ -3,8 +3,8 @@
     "path": "chrome/claude-in-chrome-permissions-guide.md",
     "sourceUrl": "https://support.claude.com/en/articles/12902446-claude-in-chrome-permissions-guide",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "89791a828e67cd2e25b459772f7ddb62b8cd8803972d8a72ed8c64b697ad934d"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "0ffd10ae44817241a35852f06b50f51c2c0cde37cd3c79f59a380a95beebcbaa"
   },
   {
     "path": "chrome/claude-in-chrome-troubleshooting.md",
@@ -17,8 +17,8 @@
     "path": "chrome/get-started-with-claude-in-chrome.md",
     "sourceUrl": "https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "3e81e4e7d88a5903aa9a1ca3948617c4568c7e5c9d8b2b2b217d2ad4d70abcf2"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "0cbfd90dd5aa83cc2384db3b287aed0ef26eb515cdc7dffc40a3c181fffdfabc"
   },
   {
     "path": "chrome/use-claude-in-chrome-safely.md",
@@ -1368,8 +1368,8 @@
     "path": "cowork/assign-tasks-from-anywhere-in-claude-cowork.md",
     "sourceUrl": "https://support.claude.com/en/articles/13947068-assign-tasks-from-anywhere-in-claude-cowork",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "31e7a384833dee23580dcd665e85addb85f1e6d85b6c5ffed4bc6fab4e00fe23"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "e175f333b000dc6c67db2aca40692001e697c683f41f8e4666ef88ba6b68a0c0"
   },
   {
     "path": "cowork/claude-cowork-architecture-overview.md",
@@ -1389,8 +1389,8 @@
     "path": "cowork/get-started-with-claude-cowork.md",
     "sourceUrl": "https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "67ef8b56e07786767d9fc9e61b38e04d8a4cf25434200728e99d1bc76a7c9a65"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "6680cd6a3800c2e3fbf64561410a3bd93c4e22557f911e7d9f6523b13edf8255"
   },
   {
     "path": "cowork/let-claude-use-your-computer-in-cowork.md",
@@ -1410,15 +1410,15 @@
     "path": "cowork/organize-your-tasks-with-projects-in-claude-cowork.md",
     "sourceUrl": "https://support.claude.com/en/articles/14116274-organize-your-tasks-with-projects-in-claude-cowork",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "9ff2685ebf6b1a1fb61c1c9b7ae435afa917143eeedb515c0ee076fdce54cf87"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "c47ade9363046811e11524ff42a72c221adeff7b49ceea447e2e5537c67cfcf8"
   },
   {
     "path": "cowork/schedule-recurring-tasks-in-claude-cowork.md",
     "sourceUrl": "https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "3db56f85ed5aee711e4cc56787c7c7d377627f40c8d21976dd6b2f780489d814"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "d5f7e683ffe65634acddaeed8e5b0b7019bfa5609aef96ad6c875c101c4e36e3"
   },
   {
     "path": "cowork/use-artifacts-in-claude-cowork.md",
@@ -1452,15 +1452,15 @@
     "path": "desktop/enabling-and-using-the-desktop-extension-allowlist.md",
     "sourceUrl": "https://support.claude.com/en/articles/12592343-enabling-and-using-the-desktop-extension-allowlist",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "05e53a94a449c0e2f39103d0d0e695085f6948d0defd7f07089cf086cba899d8"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "5c3f7028dab180d56fc21293445c037f5c552e2661492ccb67b5f579fb8805a4"
   },
   {
     "path": "desktop/getting-started-with-local-mcp-servers-on-claude-desktop.md",
     "sourceUrl": "https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "94468c661365bf2c1a7bbbe9836345a8d75278c25c9228e941268133149868ee"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "9619ed18d90f86636fd60b0aa176d8d29972eba5e785ceadf68d82da2931e3a5"
   },
   {
     "path": "desktop/install-claude-desktop.md",
@@ -1480,8 +1480,8 @@
     "path": "desktop/use-quick-entry-with-claude-desktop-on-mac.md",
     "sourceUrl": "https://support.claude.com/en/articles/12626668-use-quick-entry-with-claude-desktop-on-mac",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "cead4c5d0812c7329ce601e5074983f6316f8d2a3195ca7dfc81e3c1d7d211b4"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "e2beaf2a5cf5910953705af4dff5f1db0603e60cd6399e1ffad383ce745dfd7a"
   },
   {
     "path": "desktop/when-to-use-desktop-and-web-connectors.md",
@@ -1557,8 +1557,8 @@
     "path": "mobile/use-claude-with-android-apps.md",
     "sourceUrl": "https://support.claude.com/en/articles/11869629-use-claude-with-android-apps",
     "sourceSite": "support",
-    "fetchedAt": "2026-09-07T20:11:51.137Z",
-    "contentHash": "7d037ad1080e3d8388db8d14c1a053d14d51bde9ecbd3af9ce0323cfa9160ff5"
+    "fetchedAt": "2026-09-07T20:48:16.188Z",
+    "contentHash": "1cac05fdd346a87a0ac1724f77608581b11de183a7f956c8ab1f2e4ebc8bcd84"
   },
   {
     "path": "mobile/use-claude-with-ios-apps.md",

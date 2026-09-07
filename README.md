@@ -19,9 +19,17 @@ npm run fetch-docs
 
 `fetch-docs` pulls the corpus into `docs/` (gitignored — it's a rebuildable
 mirror, not a work product; see the "`docs/` is a cache, not a work product"
-decision in [PLAN.md](PLAN.md)). Re-run it any time to refresh: it refetches
-every page and compares content hashes, so only genuinely changed files are
-rewritten, and `recent_changes` reports what moved.
+decision in [PLAN.md](PLAN.md)). `docs.manifest.json` *is* committed, so a
+fresh clone starts with a full manifest and no corpus — the fetch populates
+it from scratch.
+
+Re-run it any time to refresh. It refetches every page, compares content
+hashes, and then reconciles the result against what is actually on disk:
+changed pages are rewritten, missing ones restored, and anything under
+`docs/` the manifest doesn't list is deleted. That last part is what keeps
+the mirror true, and it's also why `docs/` is read-only by convention —
+a file you put there by hand will be removed on the next run.
+`recent_changes` reports what moved.
 
 ## Registering it with Claude Code
 
