@@ -11,7 +11,7 @@
  * Verification) and by `npm run typecheck`.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,7 @@ import { parseLlmsFull } from "../src/fetch/parse-llms-full.js";
 import { parsePlatformLlmsFull } from "../src/fetch/parse-platform-llms-full.js";
 import { isInPlatformScope } from "../src/fetch/platform-scope.js";
 import { pruneGoneDocs } from "../src/fetch/prune.js";
+import { selectPathsToWrite } from "../src/fetch/select-writes.js";
 import { fetchWithSafeRedirects } from "../src/fetch/safe-fetch.js";
 import { assertSafeFetchUrl, isPathInsideDocs } from "../src/fetch/url-safety.js";
 
@@ -198,6 +199,24 @@ async function loadPreviousChangelog(): Promise<ChangelogEntry[]> {
   }
 }
 
+/** Which of `paths` actually exist under `docs/` right now. The manifest can
+ * only report what the *source* did; this reports what the disk has. */
+async function listExistingDocPaths(paths: readonly string[]): Promise<Set<string>> {
+  const present = new Set<string>();
+  await Promise.all(
+    paths.map(async (path) => {
+      if (!isPathInsideDocs(DOCS_ROOT, path)) return;
+      try {
+        await access(join(DOCS_ROOT, path));
+        present.add(path);
+      } catch {
+        // Missing (or unreadable) counts as absent -- it gets rewritten.
+      }
+    }),
+  );
+  return present;
+}
+
 async function writeDoc(path: string, contents: string): Promise<void> {
   if (!isPathInsideDocs(DOCS_ROOT, path)) {
     throw new Error(`Refusing to write outside docs/: ${path}`);
@@ -248,9 +267,19 @@ async function main(): Promise<void> {
 
   const docsByPath = new Map(allDocs.map((doc) => [doc.path, doc]));
 
-  const changedPaths = new Set([...diff.added, ...diff.updated]);
+  // Not just added+updated: the manifest is committed while docs/ is
+  // gitignored, so a fresh clone diffs every path as "unchanged" against a
+  // corpus that isn't there. Only the filesystem can answer that, so the
+  // manifest diff is reconciled against what's actually on disk.
+  const presentOnDisk = await listExistingDocPaths(diff.manifest.map((entry) => entry.path));
+  const pathsToWrite = selectPathsToWrite(diff, presentOnDisk);
+  const restored = pathsToWrite.length - (diff.added.length + diff.updated.length);
+  if (restored > 0) {
+    console.error(`  restoring ${String(restored)} unchanged file(s) missing from docs/`);
+  }
+
   await Promise.all(
-    [...changedPaths].map(async (path) => {
+    pathsToWrite.map(async (path) => {
       const doc = docsByPath.get(path);
       if (doc === undefined) return;
       await writeDoc(path, toFrontmatterDoc(doc.title, doc.sourceUrl, fetchedAt, doc.body));

@@ -43,7 +43,11 @@ function formatEntry(entry: ChangelogEntry): string {
  * from the `recent_changes` MCP tool. A no-op fetch (nothing added, updated,
  * or gone) is dropped rather than cluttering the digest with empty entries. */
 export function summarizeChanges(entries: readonly ChangelogEntry[], limit: number): string {
-  const recent = entries.slice(-limit).filter((entry) => !isNoop(entry)).reverse();
+  // Filter before slicing, not after. No-op fetches are common (re-running
+  // when nothing upstream moved is idempotent by design), and slicing first
+  // let a run of them fill the window and hide real history behind a "No
+  // changes recorded yet." The limit counts entries the caller can see.
+  const recent = entries.filter((entry) => !isNoop(entry)).slice(-limit).reverse();
   if (recent.length === 0) return NO_CHANGES_MESSAGE;
   return recent.map(formatEntry).join("\n\n");
 }

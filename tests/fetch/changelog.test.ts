@@ -89,4 +89,17 @@ describe("summarizeChanges", () => {
     const text = summarizeChanges([entry(), entry()], 5);
     expect(text).toBe("No changes recorded yet.");
   });
+
+  /**
+   * Re-running the fetch when nothing upstream moved is normal -- it's
+   * idempotent by design. Those no-op entries are still appended, so taking
+   * the last N *entries* and only then dropping no-ops let a run of them
+   * crowd real history out of the window: `recent_changes` answered "No
+   * changes recorded yet" while a 188-file update sat one entry further back.
+   * The limit has to count entries the caller can actually see.
+   */
+  it("does not let recent no-op fetches crowd out real history", () => {
+    const real = entry({ fetchedAt: "2026-08-24T00:00:00.000Z", added: ["a.md"] });
+    expect(summarizeChanges([real, entry(), entry()], 1)).toContain("a.md");
+  });
 });

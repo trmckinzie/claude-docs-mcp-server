@@ -789,6 +789,63 @@ decision to build a semantic/embedding ranker as its own project.
 
 ---
 
+### Step 4.5 — final review, and the bug it caught
+
+A closing `/code-review high` pass over `src` and `scripts`, plus a security
+sweep (0 npm advisories, no secrets in tracked files or in full history, no
+`eval`/`child_process`, no network egress outside the three allowlisted
+hosts). Three findings; one was a genuine blocker on the *documented*
+onboarding path, which is exactly where "done" had been asserted without
+being tested.
+
+**The bug: a fresh clone got an empty corpus, silently.** `docs.manifest.json`
+is committed; `docs/` is gitignored. So a fresh clone starts with a complete
+285-entry manifest and no corpus — and since `fetch-docs` wrote only
+`added ∪ updated`, every path diffed as *unchanged* and **nothing was written
+at all**. The script printed `unchanged: 285`, exited 0, and left `docs/`
+empty. Worse, it could not self-heal: the manifest was rewritten still
+claiming every file existed, so every later run skipped them too. Recovery
+required manually deleting `docs.manifest.json`.
+
+Proven before fixing, not inferred: feeding the real committed manifest to
+`diffManifest` as both `previous` and `fresh` yields `added: 0, updated: 0,
+unchanged: 283` — so `main()` would write 0 files.
+
+Why the earlier fresh-clone check missed it: that check ran `npm install`,
+`npm test`, and `npm run build` on a clean clone, but never `npm run
+fetch-docs` — the one step the bug lives in. A verification that stops short
+of the actual claim doesn't verify it.
+
+**Fix:** `src/fetch/select-writes.ts` (pure, 6 tests) —
+`selectPathsToWrite(diff, presentOnDisk)` returns `added ∪ updated` plus any
+*unchanged* path missing from disk. The manifest answers "did the source
+change"; only the filesystem answers "is it actually here." `fetch-docs.ts`
+supplies the disk state and reports how many files it restored.
+
+**A second bug, caught by the end-to-end check rather than the review.** With
+the corpus restored, `recent_changes(limit: 1)` answered "No changes recorded
+yet" immediately after a sync that had moved 192 files. `summarizeChanges`
+sliced to the last N entries and *then* dropped no-ops — and since re-running
+the fetch with nothing upstream to change is idempotent by design, no-op
+entries are common. A run of them filled the window and hid real history
+behind a message saying none existed, which is the one job this tool has. Now
+filters before slicing, so the limit counts entries the caller can actually
+see. (Fixed with a failing test first; the existing limit test used only
+meaningful entries, so it never caught the interaction.)
+
+**Two lower-severity findings, reported and left open** (both real, neither a
+blocker; recorded here so they aren't rediscovered from scratch):
+
+- `pruneGoneDocs` runs *after* the manifest write, so an interruption between
+  the two orphans a stale doc permanently — it appears in neither the next
+  previous-manifest nor the next fetch, so it is never pruned again, and
+  `loadDocs` keeps serving it.
+- The Help Center batch uses `Promise.all`, so one renamed or 404'd article
+  aborts the entire refresh and discards the already-fetched code and
+  platform pages.
+
+---
+
 ## Phase 3 — backlog: closed (see Phase 4)
 
 All remaining items — reindex-on-change, disk-cached index, `sourceLastMod`,
