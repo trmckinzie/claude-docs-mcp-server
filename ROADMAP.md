@@ -19,7 +19,7 @@ Tier: code. See `90_Meta/Dev Environment Standard.md` in the dev vault. The buil
 ## Reach done
 - [x] Every PLAN.md phase ticked
 - [x] Refresh the corpus (`npm run fetch-docs`). Refreshed 2026-10-09: 314 pages (221 Claude Code, 55 platform, 36 Help Center); 42 added, 15 gone upstream
-- [ ] Commit and push the standardization, then see CI green #next
+- [x] Committed and pushed as `7e14e65`; CI green 2026-10-09. **Done line met.**
 
 ## Maintenance (recurring)
 - [ ] Refresh the corpus every 30 days. After each refresh, move this item's due date 30 days on (due 2026-11-08)
