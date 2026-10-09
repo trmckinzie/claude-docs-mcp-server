@@ -17,7 +17,8 @@ import { fileURLToPath } from "node:url";
 
 import { appendEntry } from "../src/fetch/changelog.js";
 import type { ChangelogEntry } from "../src/fetch/changelog.js";
-import { findDuplicatePaths } from "../src/fetch/collisions.js";
+import { dropIdenticalDuplicates, findDuplicatePaths } from "../src/fetch/collisions.js";
+import { extractArticleUrls, findVanishedSites } from "../src/fetch/help-center-discovery.js";
 import { classifyHelpCenterArticle } from "../src/fetch/help-center-scope.js";
 import type { ManifestEntry } from "../src/fetch/manifest.js";
 import { carryForwardEntries, computeContentHash, diffManifest } from "../src/fetch/manifest.js";
@@ -124,19 +125,11 @@ async function fetchPlatformDocs(): Promise<FetchedDoc[]> {
     }));
 }
 
-const ARTICLE_LINK_RE =
-  /href="(https:\/\/support\.claude\.com\/en\/articles\/[0-9]+-[a-z0-9-]*)"/g;
 
 /** No collections API exists on this Help Center (confirmed at design time);
  * the homepage's own links are the discovery mechanism. */
 async function discoverHelpCenterArticles(): Promise<string[]> {
-  const html = await fetchTextSafely("https://support.claude.com/en/");
-  const urls = new Set<string>();
-  for (const match of html.matchAll(ARTICLE_LINK_RE)) {
-    const url = match[1];
-    if (url !== undefined) urls.add(url);
-  }
-  return [...urls];
+  return extractArticleUrls(await fetchTextSafely("https://support.claude.com/en/"));
 }
 
 function firstHeadingOrFallback(body: string, url: string): string {
@@ -291,7 +284,9 @@ async function main(): Promise<void> {
     );
   }
 
-  const allDocs = [...codeDocs, ...platformDocs, ...helpCenter.docs];
+  // Byte-identical repeats in an upstream index are one record, not a
+  // collision; anything else that shares a path still fails below.
+  const allDocs = dropIdenticalDuplicates([...codeDocs, ...platformDocs, ...helpCenter.docs]);
 
   const freshEntries: ManifestEntry[] = allDocs.map((doc) => ({
     path: doc.path,
@@ -302,6 +297,14 @@ async function main(): Promise<void> {
   }));
 
   const previousManifest = await loadPreviousManifest();
+  // Checked before anything is diffed or deleted: a source that returned
+  // nothing would otherwise read as "every page removed upstream".
+  const vanished = findVanishedSites(previousManifest, freshEntries);
+  if (vanished.length > 0) {
+    throw new Error(
+      `No pages fetched from ${vanished.join(", ")}, which had pages last run -- refusing to treat that as a deletion`,
+    );
+  }
   // A failed article is "unknown," not "deleted" -- carrying its previous
   // entry forward keeps it out of `gone`, so a transient error cannot delete
   // real content off disk.

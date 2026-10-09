@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "commands": [
+    { "name": "test", "run": ["npm", "test"], "kind": "test", "timeoutSec": 300, "description": "vitest, the whole suite" },
+    { "name": "verify", "run": ["bash", "verify.sh"], "kind": "check", "timeoutSec": 300, "description": "typecheck + test, what CI and pre-push run" },
+    { "name": "fetch-docs", "run": ["npm", "run", "fetch-docs"], "kind": "other", "timeoutSec": 900, "description": "Refresh the docs/ corpus from Anthropic's sites (network)" }
+  ]
+}

@@ -74,6 +74,7 @@ approval, `claude mcp list` should show `claude-docs ... ✔ Connected`.
 npm test         # vitest
 npm run typecheck
 npm run build
+bash verify.sh   # typecheck + test; what CI and pre-push run
 ```
 
 TDD is mandatory in this repo — see [CLAUDE.md](CLAUDE.md) for the workflow

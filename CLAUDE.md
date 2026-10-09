@@ -26,6 +26,8 @@ unnecessary, say so and why — don't silently drop it.
 - Bug fix = reproduce with a failing test, then fix.
 - `npm test` must be green before you tell me something is done. If it isn't
   green, say so and paste the output.
+- `bash verify.sh` (typecheck + test) is the one entrypoint CI and the
+  pre-push hook both run; run it before calling anything done.
 - Never edit a test to make failing code pass. Fix the code — or tell me the
   expectation was wrong and why.
 
