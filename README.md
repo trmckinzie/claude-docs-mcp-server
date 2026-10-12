@@ -1,7 +1,7 @@
 # claude-mcp-server
 
 A local MCP server that mirrors Anthropic's published documentation (Claude
-Code, the Claude Platform, Cowork, Desktop, Chrome, Mobile — 283 pages) into
+Code, the Claude Platform, Cowork, Desktop, Chrome, Mobile — 314 pages, refreshed 2026-10-09) into
 a searchable index, and exposes it to Claude Code as tools. The point:
 Claude looks up its own current instructions on demand instead of carrying
 a stale doc dump in context, or answering from memory.
